@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 @author: Lee Mariault
+Description: Filters raw BLAST results based on identity, alignment length, 
+and scaffold length (for BOTH Query and Subject) to identify potential HT events.
 """
 import os
 import sys
@@ -11,8 +13,8 @@ import pandas as pd
 # ─── ARGUMENT PARSING ───────────────────────────────────────────────────────────
 parser = argparse.ArgumentParser(description="Filter BLAST results for HT candidates.")
 parser.add_argument("--blast_dir", required=True, help="Directory containing .blast output files")
-parser.add_argument("--fungi_fai", required=True, help="Directory containing Fungi .fasta.fai index files")
-parser.add_argument("--plant_fai", required=True, help="Directory containing Plant .fasta.fai index files")
+parser.add_argument("--fungi_fai", required=True, help="Directory containing Fungi .fasta.fai index files (Query genomes)")
+parser.add_argument("--plant_fai", required=True, help="Directory containing Plant .fasta.fai index files (Subject/DB genomes)")
 parser.add_argument("--output", default="filtered_blast_results_with_fungi.tsv", help="Output TSV filename")
 
 args = parser.parse_args()
@@ -23,10 +25,10 @@ PLANT_FAI_DIR = args.plant_fai
 OUTPUT_FILE = args.output
 
 # ─── CONFIGURATION ──────────────────────────────────────────────────────────────
-# Thresholds defined in the thesis context
+# Thresholds defined in the study context, you might want different ones
 IDENTITY_THRESHOLD = 80
 ALIGNMENT_LENGTH_THRESHOLD = 500
-SCAFFOLD_LENGTH_THRESHOLD = 20000  # 20 kb (filters out short/fragmented scaffolds)
+SCAFFOLD_LENGTH_THRESHOLD = 20000  # 20 kb filter applied to both Query and Subject scaffolds
 
 COLUMNS = [
     "qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
@@ -54,9 +56,10 @@ def main():
         sys.exit(f"[ERROR] BLAST directory not found: {BLAST_DIR}")
 
     print(f"[INFO] Starting filtering process...")
-    print(f"[INFO] Thresholds: Identity>={IDENTITY_THRESHOLD}%, Len>={ALIGNMENT_LENGTH_THRESHOLD}bp, Scaffold>={SCAFFOLD_LENGTH_THRESHOLD}bp")
+    print(f"[INFO] Thresholds: Identity>={IDENTITY_THRESHOLD}%, Len>={ALIGNMENT_LENGTH_THRESHOLD}bp")
+    print(f"[INFO] Scaffold Length Threshold: >={SCAFFOLD_LENGTH_THRESHOLD}bp (Applied to BOTH Query and Subject)")
 
-    filtered_frames = []  # List to store valid dataframes (much faster than append)
+    filtered_frames = []
     file_count = 0
 
     for filename in os.listdir(BLAST_DIR):
@@ -64,58 +67,63 @@ def main():
             continue
             
         file_path = os.path.join(BLAST_DIR, filename)
-        base = filename[:-6]  # remove .blast suffix
-
-        # Parse filename to get genome names
+        base = filename[:-6]
         if "_VS_" in base:
-            plant_name, fungi_name = base.split("_VS_", 1)
+            subject_name, query_name = base.split("_VS_", 1)
         else:
-            # Fallback logic
-            fungi_name = base
-            plant_name = ""
+            print(f"[WARNING] Filename {filename} does not match format DB_VS_QUERY. Skipping.")
+            continue
 
-        # Paths to index files
-        fungi_fai_path = os.path.join(FUNGI_FAI_DIR, fungi_name + ".fasta.fai")
-        # Handle inconsistent extensions if necessary (.fai or .fasta.fai)
-        if not os.path.exists(fungi_fai_path):
-             fungi_fai_path = os.path.join(FUNGI_FAI_DIR, fungi_name + ".fai")
+        # 1. Load Query Index (Fungi)
+        query_fai_path = os.path.join(FUNGI_FAI_DIR, query_name + ".fasta.fai")
+        if not os.path.exists(query_fai_path):
+             query_fai_path = os.path.join(FUNGI_FAI_DIR, query_name + ".fai") # try alt extension
+        
+        query_lengths = load_fai(query_fai_path)
 
-        # Load scaffold lengths
-        fungi_lengths = load_fai(fungi_fai_path)
+        # 2. Load Subject Index (Plant)
+        subject_fai_path = os.path.join(PLANT_FAI_DIR, subject_name + ".fasta.fai")
+        if not os.path.exists(subject_fai_path):
+             subject_fai_path = os.path.join(PLANT_FAI_DIR, subject_name + ".fai")
+
+        subject_lengths = load_fai(subject_fai_path)
         
-        # (Optional: Load plant lengths if you need to filter by plant scaffold size too)
-        # plant_fai_path = os.path.join(PLANT_FAI_DIR, plant_name + ".fai")
-        
-        if not fungi_lengths:
-            # If we can't verify scaffold length, we might skip or warn. 
-            # Here we warn but proceed (filtering will fail for missing IDs).
-            # print(f"[DEBUG] No FAI found for {fungi_name}", file=sys.stderr)
+        if not query_lengths:
+            # print(f"[DEBUG] Missing index for Query {query_name}. Scaffold filter might fail.", file=sys.stderr)
+            pass
+        if not subject_lengths:
+            # print(f"[DEBUG] Missing index for Subject {subject_name}. Scaffold filter might fail.", file=sys.stderr)
             pass
 
         try:
-            # Read BLAST result
-            # Check if file is empty first to avoid pandas errors
             if os.path.getsize(file_path) == 0:
                 continue
 
             blast_results = pd.read_csv(file_path, sep="\t", names=COLUMNS)
-            blast_results["fungi_genome"] = fungi_name
+            
+            # Tag the genome source (useful for later steps)
+            blast_results["fungi_genome"] = query_name
             
             # Apply Filters
-            # 1. Identity & Alignment Length
-            mask = (blast_results["pident"] >= IDENTITY_THRESHOLD) & \
-                   (blast_results["length"] >= ALIGNMENT_LENGTH_THRESHOLD)
+            # ---------------------------------------------------------
+            # Filter 1: Basic BLAST metrics
+            mask_basic = (blast_results["pident"] >= IDENTITY_THRESHOLD) & \
+                         (blast_results["length"] >= ALIGNMENT_LENGTH_THRESHOLD)
             
-            temp_filtered = blast_results[mask]
+            temp_filtered = blast_results[mask_basic]
 
             if temp_filtered.empty:
                 continue
 
-            # 2. Scaffold Length (Map qseqid to length dictionary)
-            # This ensures the fungal hit is on a substantial scaffold, not a tiny contig
-            temp_filtered = temp_filtered[
-                temp_filtered["qseqid"].map(lambda x: fungi_lengths.get(x, 0)) >= SCAFFOLD_LENGTH_THRESHOLD
-            ]
+            # Filter 2: Scaffold Lengths (CRITICAL FIX)
+            # Check QSEQID (Query/Fungi) length
+            valid_query = temp_filtered["qseqid"].map(lambda x: query_lengths.get(str(x), 0)) >= SCAFFOLD_LENGTH_THRESHOLD
+            
+            # Check SSEQID (Subject/Plant) length
+            valid_subject = temp_filtered["sseqid"].map(lambda x: subject_lengths.get(str(x), 0)) >= SCAFFOLD_LENGTH_THRESHOLD
+            
+            # Keep only rows satisfying BOTH
+            temp_filtered = temp_filtered[valid_query & valid_subject]
 
             if not temp_filtered.empty:
                 filtered_frames.append(temp_filtered)
