@@ -7,8 +7,8 @@ import pandas as pd
 parser = argparse.ArgumentParser(description="Extract candidates, filter Ns, and anonymize.")
 parser.add_argument("-i", "--input_candidates", required=True, help="Candidate TSV file")
 parser.add_argument("-g", "--genomes_dir", required=True, help="Directory containing Source Genome FASTAs")
-parser.add_argument("-o", "--output", default="hgt_candidates.fasta", help="Output Multi-FASTA file")
-parser.add_argument("--mapping_out", default="hgt_id_mapping.tsv", help="Output file for ID mapping")
+parser.add_argument("-o", "--output", default="ht_candidates.fasta", help="Output Multi-FASTA file")
+parser.add_argument("--mapping_out", default="ht_id_mapping.tsv", help="Output file for ID mapping")
 
 args = parser.parse_args()
 
