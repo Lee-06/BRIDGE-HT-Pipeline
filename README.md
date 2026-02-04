@@ -1,13 +1,13 @@
 # Bidirectional Fungi-Plant Horizontal Transfers Detection Pipeline
 
-## 📖 Overview
+## Overview
 This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate Horizontal Transfer (HT) candidates between **Fungi** and **Plants** (bidirectional). 
 
 The workflow performs a massive all-vs-all genomic comparison using high-sensitivity alignment, applies rigorous filtering for contamination and vertical inheritance, removes artifacts (TEs, rRNA), and validates final candidates using Maximum Likelihood phylogenetic reconstruction with full header restoration.
 
 ---
 
-## ⚠️ Critical Data Requirements
+## ⚠️ Critical Data Requirements ⚠️ 
 **Important:** This pipeline is designed for **large-scale comparative genomics**. To obtain meaningful results, your input dataset must meet specific criteria:
 
 * **Taxonomic Breadth:** You must include a diverse representation of genomes from both kingdoms.
@@ -40,7 +40,7 @@ pip install pandas biopython numpy
 
 ---
 
-## 🚀 Usage Guide
+## Usage Guide
 
 ### Step 1: Genome-Wide Homology Search
 Perform the massive pairwise alignment. This step requires significant computational resources.
