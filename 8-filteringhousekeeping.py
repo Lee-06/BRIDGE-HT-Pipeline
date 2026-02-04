@@ -8,8 +8,8 @@ from Bio import SeqIO
 
 parser = argparse.ArgumentParser(description="Filter out housekeeping genes (EggNOG) and rRNA (SILVA), while checking for TEs (Repbase).")
 parser.add_argument("--annotations", required=True, help="EggNOG annotation file (.annotations)")
-parser.add_argument("--fasta_in", required=True, help="Clustered FASTA input (hgt_clusters.fasta)")
-parser.add_argument("--fasta_out", default="hgt_filtered.fasta", help="Final Filtered FASTA output")
+parser.add_argument("--fasta_in", required=True, help="Clustered FASTA input (ht_clusters.fasta)")
+parser.add_argument("--fasta_out", default="ht_filtered.fasta", help="Final Filtered FASTA output")
 parser.add_argument("--silva", required=True, help="Path to local SILVA BLAST database")
 parser.add_argument("--repbase", required=True, help="Path to local Repbase BLAST database")
 parser.add_argument("--threads", default=4, help="Number of threads for BLAST")
