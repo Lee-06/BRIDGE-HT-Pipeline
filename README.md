@@ -1,7 +1,7 @@
 # Bidirectional Fungi-Plant Horizontal Transfers Detection Pipeline
 
 ## 📖 Overview
-This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate Horizontal Gene Transfer (HT) candidates between **Fungi** and **Plants** (bidirectional). 
+This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate Horizontal Transfer (HT) candidates between **Fungi** and **Plants** (bidirectional). 
 
 The workflow performs a massive all-vs-all genomic comparison using high-sensitivity alignment, applies rigorous filtering for contamination and vertical inheritance, removes artifacts (TEs, rRNA), and validates final candidates using Maximum Likelihood phylogenetic reconstruction with full header restoration.
 
