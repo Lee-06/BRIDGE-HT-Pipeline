@@ -61,7 +61,11 @@ python 6-extractHTcandidates.py
 
 ./7-cluster_and_annotate_candidates.sh /path/to/eggnog_database
 
-python 8-filteringhousekeeping.py
+python 8-filteringhousekeeping.py \
+    --annotations hgt_annotations.emapper.annotations \
+    --fasta_in hgt_clusters.fasta \
+    --silva /chemin/vers/db/silva_nucl \
+    --repbase /chemin/vers/db/repbase_nucl
 
 *Step 6: Phylogenetic Validation*
 
