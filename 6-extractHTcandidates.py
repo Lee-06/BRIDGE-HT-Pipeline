@@ -4,59 +4,67 @@ import argparse
 from Bio import SeqIO
 import pandas as pd
 
-parser = argparse.ArgumentParser(description="Extract final candidates and anonymize headers with mapping.")
+parser = argparse.ArgumentParser(description="Extract candidates, filter Ns, and anonymize.")
 parser.add_argument("-i", "--input_candidates", required=True, help="Candidate TSV file")
-parser.add_argument("-g", "--genomes_dir", required=True, help="Directory containing Genome FASTA files (Source of candidates)")
+parser.add_argument("-g", "--genomes_dir", required=True, help="Directory containing Source Genome FASTAs")
 parser.add_argument("-o", "--output", default="hgt_candidates.fasta", help="Output Multi-FASTA file")
 parser.add_argument("--mapping_out", default="hgt_id_mapping.tsv", help="Output file for ID mapping")
 
 args = parser.parse_args()
 
 df = pd.read_csv(args.input_candidates, sep="\t")
-required_cols = ["sseqid_fungi", "sstart_fungi", "send_fungi", "fungi_genome", "qseqid"]
-if not all(col in df.columns for col in required_cols):
-    exit(f"[ERROR] Input TSV missing columns. Required: {required_cols}")
 
-print(f"[INFO] Extracting {len(df)} sequences...")
+if "sseqid_fungi" in df.columns:
+    col_id, col_start, col_end, col_genome = "sseqid_fungi", "sstart_fungi", "send_fungi", "fungi_genome"
+else:
+    col_id, col_start, col_end, col_genome = "sseqid", "sstart", "send", "plant_genome"
 
-grouped = df.groupby("fungi_genome")
+print(f"[INFO] Processing {len(df)} candidates...")
+
+grouped = df.groupby(col_genome)
 mapping_data = []
 counter = 1
+kept_count = 0
+rejected_count = 0
 
 with open(args.output, "w") as out_f:
     for genome_name, group in grouped:
         genome_path = os.path.join(args.genomes_dir, str(genome_name) + ".fasta")
-        if not os.path.exists(genome_path):
-             genome_path = os.path.join(args.genomes_dir, str(genome_name)) 
+        if not os.path.exists(genome_path): genome_path = os.path.join(args.genomes_dir, str(genome_name))
         
         if not os.path.exists(genome_path):
-            print(f"[WARNING] Genome {genome_name} not found. Skipping {len(group)} candidates.")
+            print(f"[WARNING] Genome {genome_name} not found.")
             continue
             
-        print(f"  -> Processing {genome_name}...")
         seq_dict = SeqIO.to_dict(SeqIO.parse(genome_path, "fasta"))
         
         for _, row in group.iterrows():
-            scaffold = str(row["sseqid_fungi"]).strip()
-            start = int(row["sstart_fungi"])
-            end = int(row["send_fungi"])
-            query_ref = str(row["qseqid"])
-            
+            scaffold = str(row[col_id]).strip()
+            start = int(row[col_start])
+            end = int(row[col_end])
             if start > end: start, end = end, start
             
             if scaffold in seq_dict:
-                seq_record = seq_dict[scaffold]
-                fragment = seq_record.seq[start-1:end]
+                full_scaffold_seq = seq_dict[scaffold].seq
+                fragment = full_scaffold_seq[start-1:end]
+                flank_upstream_start = max(0, start-1 - 5000)
+                flank_upstream = full_scaffold_seq[flank_upstream_start : start-1]
+                flank_downstream_end = min(len(full_scaffold_seq), end + 5000)
+                flank_downstream = full_scaffold_seq[end : flank_downstream_end]
+                if 'n' in fragment.lower() or 'n' in flank_upstream.lower() or 'n' in flank_downstream.lower():
+                    rejected_count += 1
+                    continue
+
                 safe_id = f"CAND_{counter:05d}"
                 clean_genome = str(genome_name).replace(" ", "_")
-                original_info = f"{clean_genome}|{scaffold}|{start}-{end}|vs|{query_ref}"
+                original_info = f"{clean_genome}|{scaffold}|{start}-{end}"
+                
                 out_f.write(f">{safe_id}\n{fragment}\n")
                 mapping_data.append({"safe_id": safe_id, "original_header": original_info})
                 counter += 1
-            else:
-                print(f"[WARNING] Scaffold {scaffold} not found in {genome_name}")
+                kept_count += 1
 
 map_df = pd.DataFrame(mapping_data)
 map_df.to_csv(args.mapping_out, sep="\t", index=False)
-print(f"[SUCCESS] Extracted sequences to {args.output}")
-print(f"[SUCCESS] ID Mapping saved to {args.mapping_out}")
+print(f"[SUCCESS] Kept {kept_count} candidates. Rejected {rejected_count} due to 'N's.")
+print(f"[SUCCESS] Mapping saved to {args.mapping_out}")
