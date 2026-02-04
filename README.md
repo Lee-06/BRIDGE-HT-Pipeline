@@ -1,80 +1,136 @@
-__**Overview**__
+# Bidirectional Fungi-Plant Horizontal Transfers Detection Pipeline
 
-The pipeline performs a massive all-vs-all genomic comparison, filters for high-confidence transfer events, removes contaminants/housekeeping genes, and validates candidates using phylogenetic reconstruction.
+## 📖 Overview
+This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate Horizontal Gene Transfer (HT) candidates between **Fungi** and **Plants** (bidirectional). 
 
-__**Critical Data Requirements**__
+The workflow performs a massive all-vs-all genomic comparison using high-sensitivity alignment, applies rigorous filtering for contamination and vertical inheritance, removes artifacts (TEs, rRNA), and validates final candidates using Maximum Likelihood phylogenetic reconstruction with full header restoration.
 
-This pipeline is designed for large-scale comparative genomics. To obtain meaningful results and successfully distinguish Horizontal Gene Transfers (HGT) from vertical inheritance or contamination, your input dataset must meet specific criteria:
-- Taxonomic Breadth: You must include a diverse representation of genomes from both kingdoms.
-- Fungi: A wide range of phyla (e.g., Ascomycota, Basidiomycota, basal lineages) is required to accurately identify the fungal origin of candidate sequences.
-- Plants: A broad sampling of plant families (Angiosperms, Gymnosperms, Bryophytes, etc.) is essential. The "patchy distribution" filter (Script 4) relies on having enough distant plant genomes to prove that a candidate gene is absent in closely related species, effectively ruling out vertical inheritance.
-- Volume: This workflow was validated on a dataset of ~1,080 fungal genomes and ~400 plant genomes. Running this pipeline on a small dataset (e.g., <50 genomes) will likely yield a high rate of false positives (conserved genes that appear "unique" simply due to the small sample size).
+---
 
-__**System Requirements**__
+## ⚠️ Critical Data Requirements
+**Important:** This pipeline is designed for **large-scale comparative genomics**. To obtain meaningful results, your input dataset must meet specific criteria:
 
-*Dependencies*
+* **Taxonomic Breadth:** You must include a diverse representation of genomes from both kingdoms.
+    * *Fungi:* A wide range of phyla (e.g., Ascomycota, Basidiomycota, basal lineages).
+    * *Plants:* A broad sampling of families (Angiosperms, Gymnosperms, Bryophytes) to effectively apply the "patchy distribution" filter (Script 4).
+* **Volume:** This workflow was validated on a dataset of **~1,080 fungal genomes** and **~400 plant genomes**. Running this on small datasets (<50 genomes) will yield high false-positive rates.
 
-The pipeline requires the following tools to be installed and in your system $PATH:
-BLAST+ (specifically blastn, makeblastdb)
-hs-blastn (Highly recommended for the initial genome-wide search)
-CD-HIT (for clustering)
-EggNOG-mapper (for functional annotation)
-MAFFT (for multiple sequence alignment)
-IQ-TREE (for phylogenetic tree inference)
-Diamond (used by EggNOG-mapper)
+---
 
-*Python Libraries*
+## ⚙️ System Requirements
 
-pandas
-biopython
-numpy
+### Dependencies
+The pipeline requires the following tools to be installed and available in your system `$PATH`:
 
-__**Usage Guide**__
+| Tool | Purpose |
+| :--- | :--- |
+| **BLAST+** | `blastn`, `makeblastdb`, `blastx` |
+| **hs-blastn** | High-sensitivity alignment for the initial genome-wide sweep |
+| **CD-HIT** | Sequence clustering to reduce redundancy |
+| **EggNOG-mapper** | Functional annotation |
+| **Diamond** | Used by EggNOG-mapper |
+| **MAFFT** | Multiple Sequence Alignment (MSA) |
+| **trimAl** | Automated alignment trimming |
+| **IQ-TREE** | Phylogenetic tree inference (with ModelFinder & UltraFast Bootstrap) |
 
-*Step 1: Genome-Wide Homology Search*
+### Python Libraries
+```bash
+pip install pandas biopython numpy
+```
 
+---
+
+## 🚀 Usage Guide
+
+### Step 1: Genome-Wide Homology Search
+Perform the massive pairwise alignment. This step requires significant computational resources.
+```bash
+# Usage: ./1-BlastWholeGenomes.sh <plant_genomes_dir> <fungi_genomes_dir>
 ./1-BlastWholeGenomes.sh ./data/plant_genomes ./data/fungi_genomes
+```
 
-*Step 2: Primary Filtering*
-
+### Step 2: Primary Filtering
+Filter results based on identity (>80%), alignment length (>500bp), and scaffold length (>20kb for **both** query and subject).
+```bash
 python 2-filter_blast_results.py \
     --blast_dir ./blastresults \
     --fungi_fai ./data/fungi_indices \
-    --plant_fai ./data/plant_indices
-    
-*Step 3: Extract & Check Distribution*
+    --plant_fai ./data/plant_indices \
+    --output filtered_blast_results_with_fungi.tsv
+```
 
-python 3-extractfasta.py
+### Step 3: Extract Sequences & Check Distribution
+Extract sequences with unique headers to prevent collisions, then check their distribution across all plant genomes to rule out vertical inheritance.
+```bash
+# 3a. Extract sequences (Renames headers to >Species__OriginalID)
+python 3-extractfasta.py \
+    --input_tsv filtered_blast_results_with_fungi.tsv \
+    --genomes_dir ./data/plant_genomes \
+    --outdir ./selected_sequences
 
+# 3b. Verify Patchy Distribution
 python 4-FindNonUbiquitousSequences.py \
     -s ./selected_sequences \
     -p ./data/plant_genomes \
     -j 10 -t 4
+```
 
-*Step 4: Calculate HT Index*
+### Step 4: Calculate HT Index
+Compare the bitscores of candidates against Fungi vs. Plants.
+```bash
+python 5-CompareBlastResults.py \
+    --fungi_results filtered_blast_results_with_fungi.tsv \
+    --plant_results plant_alignment_results.tsv \
+    --output fungi_vs_plant_comparison.tsv \
+    --candidates_out ht_candidates.tsv
+```
 
-python 5-CompareBlastResults.py
+### Step 5: Annotation, Cleaning & Safe Extraction
+Extract final candidates using **safe IDs** (to protect against downstream tool crashes), cluster them, and remove housekeeping genes/artifacts.
 
-*Step 5: Functional Annotation & Cleaning*
+```bash
+# 5a. Extract Candidates & Generate Mapping File
+python 6-extractHTcandidates.py \
+    --input_candidates ht_candidates.tsv \
+    --genomes_dir ./data/fungi_genomes \
+    --output ht_candidates.fasta \
+    --mapping_out ht_id_mapping.tsv
 
-python 6-extractHTcandidates.py
-
+# 5b. Cluster (CD-HIT) & Annotate (EggNOG)
 ./7-cluster_and_annotate_candidates.sh /path/to/eggnog_database
 
+# 5c. Filter Housekeeping Genes, rRNA (SILVA), and verify TEs (Repbase)
 python 8-filteringhousekeeping.py \
-    --annotations hgt_annotations.emapper.annotations \
-    --fasta_in hgt_clusters.fasta \
-    --silva /chemin/vers/db/silva_nucl \
-    --repbase /chemin/vers/db/repbase_nucl
+    --annotations ht_annotations.emapper.annotations \
+    --fasta_in ht_clusters.fasta \
+    --silva /path/to/db/silva_nucl \
+    --repbase /path/to/db/repbase_nucl
+```
 
-*Step 6: Phylogenetic Validation*
+### Step 6: Phylogenetic Validation
+Build Maximum Likelihood trees for the final list. This script restores the full biological species names in the final tree files using the mapping generated in Step 5.
 
+```bash
 python 9-build_phylogenies.py \
-    --input hgt_filtered.fasta \
+    --input ht_filtered.fasta \
+    --mapping ht_id_mapping.tsv \
     --database /path/to/ncbi_nt_db \
-    --outdir ./phylogenies
+    --outdir ./phylogenies \
+    --threads 8
+```
 
-__**Output**__
+---
 
-hgt_candidates.tsv: Table of potential HT events with scores.
-phylogenies/: Directory containing .treefile (Newick trees) and alignments for every candidate. In the current version these trees must be inspected for fungal nesting within plant clades (or vice-versa). *(In future versions this verification step is automated by RANGER-DTL, a tree reconciliation software)*
+## 📂 Output Files
+
+| File/Directory | Description |
+| :--- | :--- |
+| **`ht_candidates.tsv`** | Table of potential HT events with scores and metrics. |
+| **`ht_id_mapping.tsv`** | Key file linking the safe IDs (`CAND_XXXX`) used during processing to the full biological headers. |
+| **`phylogenies/`** | Contains `.treefile` (Newick trees) and alignments (`.aln`) for every candidate. |
+| | **Note:** Trees in this folder have **restored headers**, allowing immediate visual inspection of species names. |
+
+---
+
+## 📚 Citation
+Article in submission process... **(TO UPDATE)**
