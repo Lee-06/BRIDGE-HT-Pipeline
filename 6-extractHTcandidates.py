@@ -12,6 +12,41 @@ parser.add_argument("--mapping_out", default="ht_id_mapping.tsv", help="Output f
 
 args = parser.parse_args()
 
+def check_tandem_repeats(sequence, temp_id="temp_seq"):
+    """
+    Runs TRF (Tandem Repeats Finder) on a sequence string.
+    Returns True if significant repeats are found (>50% of seq covered).
+    """
+    temp_fasta = f"{temp_id}.fasta"
+    with open(temp_fasta, "w") as f:
+        f.write(f">{temp_id}\n{sequence}\n")
+
+    cmd = ["trf", temp_fasta, "2", "7", "7", "80", "10", "50", "500", "-h", "-ngs"]
+    
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        dat_file = f"{temp_fasta}.2.7.7.80.10.50.500.dat"
+        if os.path.exists(dat_file):
+            with open(dat_file, "r") as df:
+                lines = df.readlines()
+                data_lines = [l for l in lines if len(l.split()) > 10]
+                
+            os.remove(dat_file)
+            os.remove(temp_fasta)
+            
+            if len(data_lines) > 0:
+                return True
+            else:
+                return False
+        else:
+            if os.path.exists(temp_fasta): os.remove(temp_fasta)
+            return False
+
+    except Exception:
+        if os.path.exists(temp_fasta): os.remove(temp_fasta)
+        return False
+
 df = pd.read_csv(args.input_candidates, sep="\t")
 
 if "sseqid_fungi" in df.columns:
@@ -51,7 +86,13 @@ with open(args.output, "w") as out_f:
                 flank_upstream = full_scaffold_seq[flank_upstream_start : start-1]
                 flank_downstream_end = min(len(full_scaffold_seq), end + 5000)
                 flank_downstream = full_scaffold_seq[end : flank_downstream_end]
+
                 if 'n' in fragment.lower() or 'n' in flank_upstream.lower() or 'n' in flank_downstream.lower():
+                    rejected_count += 1
+                    continue
+
+                if check_tandem_repeats(str(fragment), f"cand_{counter}"):
+                    print(f"    [REJECT] Candidate {counter} is repetitive.")
                     rejected_count += 1
                     continue
 
