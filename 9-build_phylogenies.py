@@ -113,7 +113,7 @@ for record in SeqIO.parse(args.input, "fasta"):
     subprocess.run(["trimal", "-in", aln_path, "-out", trimmed_path, "-automated1"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # 5. Tree (IQ-TREE)
-    subprocess.run(["iqtree", "-s", trimmed_path, "-bb", "1000", "-nt", str(args.threads), "-quiet"])
+    subprocess.run(["iqtree2", "-s", trimmed_path, "-bb", "1000", "-nt", str(args.threads), "-quiet"])
     
     # 6. RESTORE HEADERS
     tree_file = trimmed_path + ".treefile"
