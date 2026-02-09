@@ -17,7 +17,7 @@ if [ ! -f "$INPUT_FASTA" ]; then
 fi
 
 echo "[INFO] Clustering sequences with CD-HIT..."
-cd-hit -i "$INPUT_FASTA" -o ht_clusters.fasta -c 0.9 -n 5 -d 0 -T 8 -M 16000
+cd-hit-est -i "$INPUT_FASTA" -o ht_clusters.fasta -c 0.7 -n 5 -G 0 -aS 0.8 -T 8 -M 16000
 
 echo "[INFO] Annotating with EggNOG-Mapper..."
 # Note: Ensure eggnog-mapper is installed (emapper.py)
