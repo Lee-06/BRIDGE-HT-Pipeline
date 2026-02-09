@@ -72,11 +72,11 @@ python 3-extractfasta.py \
     --genomes_dir ./data/plant_genomes \
     --outdir ./selected_sequences
 
-# 3b. Verify Patchy Distribution
-python 4-FindNonUbiquitousSequences.py \
-    -s ./selected_sequences \
+# 3b. Verify candidate is not shared amongst many species
+python 4-CheckDistribution.py \
+    -s candidates.fasta \
     -p ./data/plant_genomes \
-    -j 10 -t 4
+    -f ./data/fungi_genomes
 ```
 
 ### Step 4: Calculate HT Index
@@ -118,7 +118,7 @@ Build Maximum Likelihood trees for the final list. This script restores the full
 python 9-build_phylogenies.py \
     --input ht_filtered.fasta \
     --mapping ht_id_mapping.tsv \
-    --database /path/to/ncbi_nt_db \
+    --database /local/path/to/nt \
     --outdir ./phylogenies \
     --threads 8
 ```
