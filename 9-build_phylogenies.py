@@ -37,7 +37,7 @@ id_map = pd.Series(map_df.original_header.values, index=map_df.safe_id).to_dict(
 def run_blast_local(query_seq, db_path, threads):
     """Fetches homologs and ensures headers are clean/readable."""
     cmd = [
-        "blastn", "-db", db_path, "-query", "-", 
+        "blastn", "-db", args.database, "-query", "-", 
         "-outfmt", "6 sseqid sseq sscinames", 
         "-max_target_seqs", str(args.max_hits), 
         "-num_threads", str(threads)
