@@ -16,33 +16,43 @@ The workflow performs a massive all-vs-all genomic comparison using high-sensiti
 
 * **Taxonomic Breadth:** You must include a diverse representation of genomes from both kingdoms.
     * *Fungi:* A wide range of phyla (e.g., Ascomycota, Basidiomycota, basal lineages).
-    * *Plants:* A broad sampling of families (Angiosperms, Gymnosperms, Bryophytes) to effectively apply the "patchy distribution" filter (Script 4).
+    * *Plants:* A broad sampling of families (Angiosperms, Gymnosperms, Bryophytes) to effectively apply the "patchy distribution" filter (Script 9c).
 * **Volume:** This workflow was validated on a dataset of **~1,080 fungal genomes** and **~400 plant genomes**. Running this on small datasets (<50 genomes) will yield high false-positive rates.
 
 ---
 
 ## ⚙️ System Requirements
 
-### Dependencies
+### External Tools
 The pipeline requires the following tools to be installed and available in your system `$PATH`:
 
 | Tool | Purpose |
 | :--- | :--- |
-| **BLAST+** | `blastn`, `makeblastdb`, `blastx` |
 | **hs-blastn** | High-sensitivity alignment for the initial genome-wide sweep |
-| **CD-HIT** | Sequence clustering to reduce redundancy |
+| **BLAST+** | `blastn`, `makeblastdb`, `blastdbcmd` |
+| **Tandem Repeats Finder (TRF)** | Filtering repetitive elements |
+| **CD-HIT-EST** | Clustering nucleotide sequences |
 | **EggNOG-mapper** | Functional annotation |
-| **Diamond** | Used by EggNOG-mapper |
-| **MAFFT** | Multiple Sequence Alignment (MSA) |
-| **trimAl** | Automated alignment trimming |
-| **IQ-TREE** | Phylogenetic tree inference (with ModelFinder & UltraFast Bootstrap) |
+| **MAFFT** | Multiple Sequence Alignment |
+| **trimAl** | Alignment trimming |
+| **IQ-TREE 2** | Phylogenetic tree inference |
 
-### Python Libraries
+### Python Dependencies
 ```bash
-pip install pandas biopython numpy
+pip install pandas biopython numpy scipy
 ```
 
 ---
+
+## 📂 Data Preparation
+
+Your input data should be organized as follows:
+
+    data/plants/: Directory containing Plant genome FASTA files.
+
+    data/fungi/: Directory containing Fungi genome FASTA files.
+
+    databases/: Local databases (EggNOG, SILVA, CoreNT/NT).
 
 ## Usage Guide
 
