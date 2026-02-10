@@ -135,14 +135,14 @@ python 9-build_phylogenies.py \
 
 ---
 
-## 📂 Output Files
+## 📂 Output Description
+The final output Result_HT/final_candidates_summary.tsv contains the classification of each candidate:
 
-| File/Directory | Description |
-| :--- | :--- |
-| **`ht_candidates.tsv`** | Table of potential HT events with scores and metrics. |
-| **`ht_id_mapping.tsv`** | Key file linking the safe IDs (`CAND_XXXX`) used during processing to the full biological headers. |
-| **`phylogenies/`** | Contains `.treefile` (Newick trees) and alignments (`.aln`) for every candidate. |
-| | **Note:** Trees in this folder have **restored headers**, allowing immediate visual inspection of species names. |
+    candidate_id: Unique ID of the transfer event.
+
+    plant_monophyly / fungi_monophyly: Boolean indicating if kingdoms form exclusive clades (Vertical inheritance) or if they are mixed (Horizontal Transfer).
+
+    closest_plant_species: The plant species most closely related to the fungal candidate (and vice-versa).
 
 ---
 
