@@ -44,7 +44,7 @@ pip install pandas biopython numpy scipy
 
 ---
 
-## 📂 Data Preparation
+📂 Data Preparation
 
 Your input data should be organized as follows:
 
@@ -52,7 +52,9 @@ Your input data should be organized as follows:
 
     data/fungi/: Directory containing Fungi genome FASTA files.
 
-    databases/: Local databases (EggNOG, SILVA, CoreNT/NT).
+    databases/: Directory to store the combined local BLAST database.
+
+    taxonomy/: (Recommended) Lists of TaxIDs for your specific Plant and Fungi genomes to enable balanced selection in Step 5.
 
 ## Usage Guide
 
@@ -63,7 +65,7 @@ python 1-BlastWholeGenomes.py \
     --plants-dir ./data/plants \
     --fungi-dir ./data/fungi \
     --output Result_HT \
-    --threads 32
+    --threads [YOUR_NUMER_OF_THREADS]
 ```
 
 ### Step 2: Bilateral Filtering & Extraction
@@ -85,20 +87,21 @@ python 3-ExtractFasta.py \
     --outdir Result_HT/selected_sequences
 ```
 
-### Step 3: Cleaning (Repeats & Contaminants)
+### Step 3: Cleaning (Repeats & Organelles/Ribosomal)
 Removes artifacts using Tandem Repeats Finder (TRF) and filters Organelle/rRNA sequences using local BLAST databases.
 ```bash
 # 3a. Filter Tandem Repeats (Mode: hardmask or remove)
 python 4-FilterTandemRepeats.py \
     --selected-dir Result_HT/selected_sequences \
     --outdir Result_HT/cleaned_trf \
-    --mode hardmask
+    --mode hardmask \
+    --trf-path /usr/bin/trf
 
 # 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
 python 5-FilterOrganelleAndRibosomal.py \
     --fasta-in Result_HT/cleaned_trf/all_candidates.fasta \
     --outdir Result_HT/cleaned_final \
-    --silva-db /path/to/silva \
+    --silva-db /path/to/silva_db \
     --plastid-db /path/to/plastid_db
 ```
 
@@ -125,7 +128,12 @@ python 8-FilterHousekeeping.py \
 ```
 
 ### Step 5: Homolog Retrieval (Balanced Selection)
-Retrieves homologs from a local genome database.
+Retrieves homologs directly from a Local Combined Database comprising all initial input genomes. This ensures all potential homologs are found within the study's dataset.
+First, create a combined BLAST database from your inputs:
+```bash
+cat ./data/plants/*.fasta ./data/fungi/*.fasta > databases/all_genomes.fasta
+makeblastdb -in databases/all_genomes.fasta -dbtype nucl -out databases/local_genomes_db -parse_seqids
+```
 ```bash
 # 5a. Prepare FASTA headers
 python 9a-PrepareHomologs.py \
@@ -135,15 +143,15 @@ python 9a-PrepareHomologs.py \
 # 5b. Fetch Homologs from Local DB
 python 9b-FetchHomologs.py \
     --homologs-dir Result_HT/homologs_prep \
-    --core-db /path/to/core_nt_db \
+    --core-db databases/local_genomes_db \
     --outdir Result_HT/homologs_fetched \
     --max-plant-species 50 \
-    --max-fungi-species 50
+    --max-fungi-species 50 \
+    --threads [YOUR_NUMER_OF_THREADS]
 ```
 
-Step 6: Phylogeny & Automated Topology Analysis
-
-Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly).
+### Step 6: Phylogeny & Automated Topology Analysis
+Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly)
 ```bash
 # 6a. Build Trees
 python 10-BuildPhylogenies.py \
@@ -160,14 +168,16 @@ python 11-AnalyzeTopology.py \
 ---
 
 ## 📂 Output Description
+
 The final output Result_HT/final_candidates_summary.tsv contains the classification of each candidate:
 
     candidate_id: Unique ID of the transfer event.
 
     plant_monophyly / fungi_monophyly: Boolean indicating if kingdoms form exclusive clades (Vertical inheritance) or if they are mixed (Horizontal Transfer).
 
-    closest_plant_species: The plant species most closely related to the fungal candidate (and vice-versa).
+    closest_plant_species: The plant species most closely related to the fungal candidate.
 
+    closest_pair_distance: Patristic distance between the candidate and its closest relative.
 ---
 
 ## 📚 Citation
