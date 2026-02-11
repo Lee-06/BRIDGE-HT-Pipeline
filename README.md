@@ -1,23 +1,13 @@
-# Bidirectional Fungi-Plant Horizontal Transfers Detection Pipeline
+# Bidirectional Fungi-Plant Horizontal Transfer (HT) Detection Pipeline
 
-## Overview
+## 📖 Overview
 This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
 
-Unlike standard pipelines focused solely on genes, this workflow is designed to detect horizontal transfers of both:
+The pipeline detects both:
 * **Genes (HGT)**
 * **Transposable Elements (HTT)**
 
-The workflow performs a massive all-vs-all genomic comparison using high-sensitivity alignment, applies rigorous filtering for contamination and vertical inheritance, removes artifacts (rRNA, assembly errors), and validates final candidates using Maximum Likelihood phylogenetic reconstruction with full header restoration.
-
----
-
-## ⚠️ Critical Data Requirements ⚠️ 
-**Important:** This pipeline is designed for **large-scale comparative genomics**. To obtain meaningful results, your input dataset must meet specific criteria:
-
-* **Taxonomic Breadth:** You must include a diverse representation of genomes from both kingdoms.
-    * *Fungi:* A wide range of phyla (e.g., Ascomycota, Basidiomycota, basal lineages).
-    * *Plants:* A broad sampling of families (Angiosperms, Gymnosperms, Bryophytes) to effectively apply the "patchy distribution" filter (Script 9c).
-* **Volume:** This workflow was validated on a dataset of **~1,080 fungal genomes** and **~400 plant genomes**. Running this on small datasets (<50 genomes) will yield high false-positive rates.
+It performs a massive all-vs-all genomic comparison, applies rigorous filtering for contamination (bilateral scaffold check), removes artifacts (Tandem Repeats, rRNA), and validates candidates using **phylogenomic screening** and **automated topology analysis**.
 
 ---
 
@@ -32,15 +22,14 @@ The pipeline requires the following tools to be installed and available in your 
 | **BLAST+** | `blastn`, `makeblastdb`, `blastdbcmd` |
 | **Tandem Repeats Finder (TRF)** | Filtering repetitive elements |
 | **CD-HIT-EST** | Clustering nucleotide sequences |
-| **EggNOG-mapper** | Functional annotation |
+| **EggNOG-mapper** | Functional annotation (`emapper.py`) |
 | **MAFFT** | Multiple Sequence Alignment |
 | **trimAl** | Alignment trimming |
-| **IQ-TREE 2** | Phylogenetic tree inference |
+| **IQ-TREE 2** | Phylogenetic tree inference (`iqtree2`) |
 
 ### Python Dependencies
 ```bash
-pip install pandas biopython numpy scipy
-```
+pip install pandas biopython numpy scipy ete3
 
 ---
 
