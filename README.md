@@ -141,28 +141,17 @@ python 9b-FetchHomologs.py \
     --max-fungi-species 50
 ```
 
-### Step 6:Pre-Tree Filtering (Optimization)
-Optimization Step: Moves candidates that are ubiquitously conserved (e.g., >50% species presence) to a skip folder. This verifies the "patchy distribution" hypothesis and saves massive computational resources by avoiding tree construction for vertical genes.
-```bash
-python 9c-FilterConserved.py \
-    --summary Result_HT/homologs_fetched/summary.tsv \
-    --homologs-dir Result_HT/homologs_fetched \
-    --rejected-dir Result_HT/skipped_conserved \
-    --max-plants 80 \
-    --max-fungi 200
-```
-
-Step 7: Phylogeny & Automated Topology Analysis
+Step 6: Phylogeny & Automated Topology Analysis
 
 Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly).
 ```bash
-# 7a. Build Trees
+# 6a. Build Trees
 python 10-BuildPhylogenies.py \
     --homologs-dir Result_HT/homologs_fetched \
     --outdir Result_HT/phylogenies \
     --iqtree-threads 4
 
-# 7b. Analyze Topologies
+# 6b. Analyze Topologies
 python 11-AnalyzeTopology.py \
     --tree-dir Result_HT/phylogenies \
     --out Result_HT/final_candidates_summary.tsv
