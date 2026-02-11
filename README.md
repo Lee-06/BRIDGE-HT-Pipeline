@@ -128,12 +128,7 @@ python 8-FilterHousekeeping.py \
 ```
 
 ### Step 5: Homolog Retrieval (Balanced Selection)
-Retrieves homologs directly from a Local Combined Database comprising all initial input genomes. This ensures all potential homologs are found within the study's dataset.
-First, create a combined BLAST database from your inputs:
-```bash
-cat ./data/plants/*.fasta ./data/fungi/*.fasta > databases/all_genomes.fasta
-makeblastdb -in databases/all_genomes.fasta -dbtype nucl -out databases/local_genomes_db -parse_seqids
-```
+Retrieves homologs from a local nucleotide database. The script automatically creates an efficient **BLASTDB Alias** from your input genomes if the database doesn't exist yet.
 ```bash
 # 5a. Prepare FASTA headers
 python 9a-PrepareHomologs.py \
@@ -141,12 +136,17 @@ python 9a-PrepareHomologs.py \
     --outdir Result_HT/homologs_prep
 
 # 5b. Fetch Homologs from Local DB
+# Note: Provide --plants-dir and --fungi-dir so the script can auto-build the database.
 python 9b-FetchHomologs.py \
     --homologs-dir Result_HT/homologs_prep \
     --core-db databases/local_genomes_db \
+    --plants-dir data/plants \
+    --fungi-dir data/fungi \
     --outdir Result_HT/homologs_fetched \
     --max-plant-species 50 \
     --max-fungi-species 50 \
+    --plants-taxids taxonomy/plants.taxids \
+    --fungi-taxids taxonomy/fungi.taxids \
     --threads [YOUR_NUMER_OF_THREADS]
 ```
 
@@ -157,7 +157,7 @@ Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically cla
 python 10-BuildPhylogenies.py \
     --homologs-dir Result_HT/homologs_fetched \
     --outdir Result_HT/phylogenies \
-    --iqtree-threads 4
+    --iqtree-threads [YOUR_NUMER_OF_THREADS]
 
 # 6b. Analyze Topologies
 python 11-AnalyzeTopology.py \
