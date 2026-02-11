@@ -142,7 +142,7 @@ python 9b-FetchHomologs.py \
 ```
 
 ### Step 6:Pre-Tree Filtering (Optimization)
-Optimization Step: Moves candidates that are ubiquitously conserved (e.g., >20% species presence) to a skip folder. This verifies the "patchy distribution" hypothesis and saves massive computational resources by avoiding tree construction for vertical genes.
+Optimization Step: Moves candidates that are ubiquitously conserved (e.g., >50% species presence) to a skip folder. This verifies the "patchy distribution" hypothesis and saves massive computational resources by avoiding tree construction for vertical genes.
 ```bash
 python 9c-FilterConserved.py \
     --summary Result_HT/homologs_fetched/summary.tsv \
