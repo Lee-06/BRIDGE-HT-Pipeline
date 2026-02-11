@@ -95,7 +95,7 @@ python 4-FilterTandemRepeats.py \
     --mode hardmask
 
 # 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
-python 5-FilterContaminants.py \
+python 5-FilterOrganelleAndRibosomal.py \
     --fasta-in Result_HT/cleaned_trf/all_candidates.fasta \
     --outdir Result_HT/cleaned_final \
     --silva-db /path/to/silva \
@@ -125,7 +125,7 @@ python 8-FilterHousekeeping.py \
 ```
 
 ### Step 5: Homolog Retrieval (Balanced Selection)
-Retrieves homologs from a local nucleotide database (CoreNT/NT). Uses a balanced selection strategy (max 50 species per kingdom) to prevent phylogenetic bias and ensure readable trees.
+Retrieves homologs from a local genome database.
 ```bash
 # 5a. Prepare FASTA headers
 python 9a-PrepareHomologs.py \
