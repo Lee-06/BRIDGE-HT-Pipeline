@@ -30,6 +30,7 @@ The pipeline requires the following tools to be installed and available in your 
 ### Python Dependencies
 ```bash
 pip install pandas biopython numpy scipy ete3
+```
 
 ---
 
