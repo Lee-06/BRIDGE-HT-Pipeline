@@ -34,7 +34,7 @@ pip install pandas biopython numpy scipy ete3
 
 ---
 
-📂 Data Preparation
+## 📂 Data Preparation
 
 Your input data should be organized as follows:
 
