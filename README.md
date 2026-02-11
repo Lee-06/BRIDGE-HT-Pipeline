@@ -57,80 +57,115 @@ Your input data should be organized as follows:
 ## Usage Guide
 
 ### Step 1: Genome-Wide Homology Search
-Perform the massive pairwise alignment. This step requires significant computational resources.
+Performs all-vs-all alignment using hs-blastn. Includes a smart resume feature to skip already processed pairs.
 ```bash
-# Usage: ./1-BlastWholeGenomes.sh <plant_genomes_dir> <fungi_genomes_dir>
-./1-BlastWholeGenomes.sh ./data/plant_genomes ./data/fungi_genomes
+python 1-BlastWholeGenomes.py \
+    --plants-dir ./data/plants \
+    --fungi-dir ./data/fungi \
+    --output Result_HT \
+    --threads 32
 ```
 
-### Step 2: Primary Filtering
-Filter results based on identity (>80%), alignment length (>500bp), and scaffold length (>20kb for **both** query and subject).
+### Step 2: Bilateral Filtering & Extraction
+Filters raw hits based on identity (>80%), alignment length (>500bp), and crucial bilateral scaffold length (>20kb in BOTH query and subject) to rule out contamination.
 ```bash
-python 2-filter_blast_results.py \
-    --blast_dir ./blastresults \
-    --fungi_fai ./data/fungi_indices \
-    --plant_fai ./data/plant_indices \
-    --output filtered_blast_results_with_fungi.tsv
+# 2a. Filter Hits
+python 2-FilterBlastResults.py \
+    --blast-dir Result_HT/blast \
+    --fungi-dir ./data/fungi \
+    --plant-dir ./data/plants \
+    --out Result_HT/filtered_blast_results.tsv \
+    --min-scaffold-len 20000 \
+    --build-fai
+
+# 2b. Extract Candidate Fragments
+python 3-ExtractFasta.py \
+    --input-tsv Result_HT/filtered_blast_results.tsv \
+    --fungi-dir ./data/fungi \
+    --outdir Result_HT/selected_sequences
 ```
 
-### Step 3: Extract Sequences & Check Distribution
-Extract sequences with unique headers to prevent collisions, then check their distribution across all plant genomes to rule out vertical inheritance.
+### Step 3: Cleaning (Repeats & Contaminants)
+Removes artifacts using Tandem Repeats Finder (TRF) and filters Organelle/rRNA sequences using local BLAST databases.
 ```bash
-# 3a. Extract sequences (Renames headers to >Species__OriginalID)
-python 3-extractfasta.py \
-    --input_tsv filtered_blast_results_with_fungi.tsv \
-    --genomes_dir ./data/plant_genomes \
-    --outdir ./selected_sequences
+# 3a. Filter Tandem Repeats (Mode: hardmask or remove)
+python 4-FilterTandemRepeats.py \
+    --selected-dir Result_HT/selected_sequences \
+    --outdir Result_HT/cleaned_trf \
+    --mode hardmask
 
-# 3b. Verify candidate is not shared amongst many species
-python 4-CheckDistribution.py \
-    -s candidates.fasta \
-    -p ./data/plant_genomes \
-    -f ./data/fungi_genomes
+# 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
+python 5-FilterContaminants.py \
+    --fasta-in Result_HT/cleaned_trf/all_candidates.fasta \
+    --outdir Result_HT/cleaned_final \
+    --silva-db /path/to/silva \
+    --plastid-db /path/to/plastid_db
 ```
 
-### Step 4: Calculate HT Index
-Compare the bitscores of candidates against Fungi vs. Plants.
+### Step 4: Clustering & Functional Annotation
+Reduces redundancy using CD-HIT-EST (0.8 identity) and annotates sequences to identify housekeeping genes.
 ```bash
-python 5-CompareBlastResults.py \
-    --fungi_results filtered_blast_results_with_fungi.tsv \
-    --plant_results plant_alignment_results.tsv \
-    --output fungi_vs_plant_comparison.tsv \
-    --candidates_out ht_candidates.tsv
+# 4a. Cluster
+python 6-ClusterCandidates.py \
+    --input Result_HT/cleaned_final/candidates.fasta \
+    --output Result_HT/ht_clusters.fasta \
+    --c 0.8
+
+# 4b. Annotate (EggNOG)
+python 7-AnnotateEggNOG.py \
+    --clusters-fasta Result_HT/ht_clusters.fasta \
+    --eggnog-data-dir /path/to/eggnog_db \
+    --outdir Result_HT/annotations
+
+# 4c. Filter Housekeeping Genes
+python 8-FilterHousekeeping.py \
+    --fasta-in Result_HT/ht_clusters.fasta \
+    --annotations Result_HT/annotations/ht_annotations.emapper.annotations \
+    --outdir Result_HT/filtered_candidates
 ```
 
-### Step 5: Annotation, Cleaning & Safe Extraction
-Extract final candidates using **safe IDs** (to protect against downstream tool crashes), cluster them, and remove housekeeping genes/artifacts.
-
+### Step 5: Homolog Retrieval (Balanced Selection)
+Retrieves homologs from a local nucleotide database (CoreNT/NT). Uses a balanced selection strategy (max 50 species per kingdom) to prevent phylogenetic bias and ensure readable trees.
 ```bash
-# 5a. Extract Candidates & Generate Mapping File
-python 6-extractHTcandidates.py \
-    --input_candidates ht_candidates.tsv \
-    --genomes_dir ./data/fungi_genomes \
-    --output ht_candidates.fasta \
-    --mapping_out ht_id_mapping.tsv
+# 5a. Prepare FASTA headers
+python 9a-PrepareHomologs.py \
+    --input Result_HT/filtered_candidates/ht_filtered.fasta \
+    --outdir Result_HT/homologs_prep
 
-# 5b. Cluster (CD-HIT) & Annotate (EggNOG)
-./7-cluster_and_annotate_candidates.sh /path/to/eggnog_database
-
-# 5c. Filter Housekeeping Genes, rRNA (SILVA), and verify TEs (Repbase)
-python 8-filteringhousekeeping.py \
-    --annotations ht_annotations.emapper.annotations \
-    --fasta_in ht_clusters.fasta \
-    --silva /path/to/db/silva_nucl \
-    --repbase /path/to/db/repbase_nucl
+# 5b. Fetch Homologs from Local DB
+python 9b-FetchHomologs.py \
+    --homologs-dir Result_HT/homologs_prep \
+    --core-db /path/to/core_nt_db \
+    --outdir Result_HT/homologs_fetched \
+    --max-plant-species 50 \
+    --max-fungi-species 50
 ```
 
-### Step 6: Phylogenetic Validation
-Build Maximum Likelihood trees for the final list. This script restores the full biological species names in the final tree files using the mapping generated in Step 5.
-
+### Step 6:Pre-Tree Filtering (Optimization)
+Optimization Step: Moves candidates that are ubiquitously conserved (e.g., >20% species presence) to a skip folder. This verifies the "patchy distribution" hypothesis and saves massive computational resources by avoiding tree construction for vertical genes.
 ```bash
-python 9-build_phylogenies.py \
-    --input ht_filtered.fasta \
-    --mapping ht_id_mapping.tsv \
-    --database /local/path/to/nt \
-    --outdir ./phylogenies \
-    --threads 8
+python 9c-FilterConserved.py \
+    --summary Result_HT/homologs_fetched/summary.tsv \
+    --homologs-dir Result_HT/homologs_fetched \
+    --rejected-dir Result_HT/skipped_conserved \
+    --max-plants 80 \
+    --max-fungi 200
+```
+
+Step 7: Phylogeny & Automated Topology Analysis
+
+Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly).
+```bash
+# 7a. Build Trees
+python 10-BuildPhylogenies.py \
+    --homologs-dir Result_HT/homologs_fetched \
+    --outdir Result_HT/phylogenies \
+    --iqtree-threads 4
+
+# 7b. Analyze Topologies
+python 11-AnalyzeTopology.py \
+    --tree-dir Result_HT/phylogenies \
+    --out Result_HT/final_candidates_summary.tsv
 ```
 
 ---
