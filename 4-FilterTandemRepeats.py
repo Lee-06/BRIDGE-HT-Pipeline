@@ -69,7 +69,7 @@ def run_trf_in_dir(fasta_in_outdir_name: str, trf_path: str, params: List[str], 
     cmd = [trf_path, fasta_in_outdir_name] + params
     print("[INFO] Running TRF in:", str(cwd))
     print("       " + " ".join(cmd))
-    subprocess.run(cmd, check=True, cwd=str(cwd))
+    subprocess.run(cmd, cwd=str(cwd))
 
 
 def normalize_mask(seq: str) -> str:
