@@ -48,7 +48,7 @@ def main():
     )
 
     # emapper options
-    p.add_argument("--cpu", type=int, default=30, help="CPUs for emapper (default: 30)")
+    p.add_argument("--cpu", type=int, default=8, help="CPUs for emapper (default: 8)")
     p.add_argument("--method", default="diamond", choices=["diamond", "hmmer"],
                    help="Search method (-m) (default: diamond)")
     p.add_argument("--itype", default="genome", help="Input type (--itype) (default: genome)")
