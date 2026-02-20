@@ -109,14 +109,15 @@ python 6-ClusterCandidates.py \
 # 4b. Annotate (EggNOG)
 python 7-AnnotateEggNOG.py \
     --clusters-fasta ht_candidates.filtered.no.MCR.fasta.cluster.fasta \
-    --eggnog-data-dir /path/to/eggnog_db \
-    --outdir eggnof_annotation
+    --eggnog-data-dir /path/to/eggnog_db \ #fill in this path where you downloaded eggnog database
+    --outdir eggnog_annotation \
+    --cpu [YOUR_NUMER_OF_THREADS]
 
 # 4c. Filter Housekeeping Genes
 python 8-FilterHousekeeping.py \
-    --fasta-in Result_HT/ht_clusters.fasta \
-    --annotations Result_HT/annotations/ht_annotations.emapper.annotations \
-    --outdir Result_HT/filtered_candidates
+    --fasta-in ht_candidates.filtered.no.MCR.fasta.cluster.fasta \
+    --annotations eggnog_annotation/ht_annotations.emapper.annotations \
+    --outdir Result_HT/
 ```
 
 ### Step 5: Homolog Retrieval (Balanced Selection)
