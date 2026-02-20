@@ -21,10 +21,9 @@ import sys
 # Utils
 # -------------------------
 
-def check_tool(name):
+def check_tool(name: str):
     if which(name) is None:
         sys.exit(f"[ERROR] Required tool not found in PATH: {name}")
-
 
 def run(cmd, quiet=False):
     if not quiet:
@@ -35,6 +34,24 @@ def run(cmd, quiet=False):
         stderr=subprocess.DEVNULL if quiet else None,
         check=False
     )
+
+def norm_threads(value: str, allow_auto: bool = True, auto_token: str = "AUTO") -> str:
+    """
+    Accepts 'AUTO' (case-insensitive) or an integer string.
+    Returns 'AUTO' or the validated integer as a string.
+    """
+    if value is None:
+        return auto_token
+    v = str(value).strip()
+    if allow_auto and v.upper() == auto_token:
+        return auto_token
+    try:
+        n = int(v)
+        if n < 1:
+            raise ValueError
+        return str(n)
+    except ValueError:
+        sys.exit(f"[ERROR] Threads value must be a positive integer or {auto_token} (got: {value})")
 
 
 # -------------------------
@@ -57,8 +74,12 @@ def main():
     ap.add_argument("--drop-query", action="store_true",
                     help="Remove the candidate sequence before alignment")
 
-    ap.add_argument("--mafft-threads", type=int, default=8)
-    ap.add_argument("--iqtree-threads", type=int, default=8)
+    # Threads: allow AUTO
+    ap.add_argument("--mafft-threads", default="AUTO",
+                    help="MAFFT threads: integer or AUTO (default: AUTO)")
+    ap.add_argument("--iqtree-threads", default="AUTO",
+                    help="IQ-TREE2 threads: integer or AUTO (default: AUTO)")
+
     ap.add_argument("--model", default=None,
                     help="IQ-TREE2 model (e.g. MFP, GTR+G)")
     ap.add_argument("--bb", type=int, default=1000,
@@ -68,6 +89,10 @@ def main():
     ap.add_argument("--quiet", action="store_true")
 
     args = ap.parse_args()
+
+    # Validate threads
+    args.mafft_threads = norm_threads(args.mafft_threads, allow_auto=True, auto_token="AUTO")
+    args.iqtree_threads = norm_threads(args.iqtree_threads, allow_auto=True, auto_token="AUTO")
 
     # Checks
     if not args.homologs_dir.is_dir():
@@ -114,9 +139,17 @@ def main():
 
         # MAFFT
         print("    [STEP] MAFFT")
-        with open(aln, "w") as out:
+        mafft_cmd = ["mafft", "--auto"]
+        # MAFFT auto threads: --thread -1
+        if args.mafft_threads == "AUTO":
+            mafft_cmd += ["--thread", "-1"]
+        else:
+            mafft_cmd += ["--thread", args.mafft_threads]
+        mafft_cmd += [str(tmp_fasta)]
+
+        with open(aln, "w", encoding="utf-8") as out:
             subprocess.run(
-                ["mafft", "--auto", "--thread", str(args.mafft_threads), str(tmp_fasta)],
+                mafft_cmd,
                 stdout=out,
                 stderr=subprocess.DEVNULL if args.quiet else None
             )
@@ -146,9 +179,12 @@ def main():
         iq_cmd = [
             "iqtree2",
             "-s", str(trimmed),
-            "-nt", str(args.iqtree_threads),
             "-bb", str(args.bb)
         ]
+
+        # IQ-TREE threads: use -T (AUTO or integer)
+        iq_cmd += ["-T", args.iqtree_threads]
+
         if args.model:
             iq_cmd += ["-m", args.model]
 
