@@ -161,10 +161,19 @@ python 9c-EnrichHomologsWithCoreNT.py \
     --threads [YOUR_NUMER_OF_THREADS]
 ```
 
-### Step 6: Phylogeny & Automated Topology Analysis
+### Step 6: Phylogeny & Automated Topology Analysis for Decision Helping
 Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly)
 ```bash
-# 6a. Build phylogenetic trees
+
+#6a. This makes the trees human-readable by swapping messy assembly IDs with clean species names or gene annotations.
+python rename_trees_fasta_ids.py \
+    -i Result_HT/homologs_cleaned_final_core_nt/ \
+    -m plant.fungi.correspondance.tsv \
+    -o Result_HT/homologs_cleaned_final_core_nt_renamed \
+    --pattern "*.fasta" \
+    --mode fasta
+
+# 6b. Build phylogenetic trees
 python 10-BuildPhylogenies.py \
     --homologs-dir Result_HT/homologs_cleaned_final_core_nt_renamed \
     --outdir Result_HT/phylogenies_core_nt \
@@ -174,10 +183,16 @@ python 10-BuildPhylogenies.py \
     --model MFP \
     --min-seqs 4
 
-# 6b. Analyze Topologies
+# 6c. Analyze Topologies
 python 11-AnalyzeTopology.py \
     --tree-dir Result_HT/phylogenies \
     --out Result_HT/final_candidates_summary.tsv
+
+#6d. Visualization: This script automates the taxonomic annotation of your tree leaves so you can easily analyze the ecological/taxonomic distribution of your hits in R or Python.
+python trees_to_taxonomy_from_taxdump.py
+    -i Result_HT/phylogenies_core_nt \
+    -d ncbi_taxdump/ \
+    -o plant_fungi_taxonomy_from_trees.tsv
 ```
 
 ---
