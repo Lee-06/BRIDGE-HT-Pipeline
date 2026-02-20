@@ -74,9 +74,9 @@ def main():
     )
 
     # ===== BLAST options =====
-    parser.add_argument("--evalue", default="1e-20", help="E-value threshold")
-    parser.add_argument("--threads", type=int, default=20, help="Number of threads")
-    parser.add_argument("--identity", type=float, default=80.0, help="Min percent identity")
+    parser.add_argument("--evalue", default="1e-50", help="E-value threshold")
+    parser.add_argument("--threads", type=int, default=8, help="Number of threads")
+    parser.add_argument("--identity", type=float, default=70.0, help="Min percent identity")
     parser.add_argument("--min-align-len", type=int, default=500, help="Min alignment length (bp)")
     parser.add_argument("--outfmt", default=DEFAULT_OUTFMT, help="BLAST outfmt")
 
