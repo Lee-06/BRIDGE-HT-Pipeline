@@ -84,14 +84,18 @@ Removes artifacts using Tandem Repeats Finder (TRF) and filters Organelle/rRNA s
 python 4-FilterTandemRepeats.py \
     --selected-dir Result_HT/selected_sequences \
     --outdir Result_HT/cleaned_trf \
+    --mode hardmask \
     --trf-path /usr/bin/trf #this path might vary depending on your installation
 
 # 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
 python 5-FilterOrganelleAndRibosomal.py \
-    --fasta-in Result_HT/cleaned_trf/all_candidates.fasta \
+    --fasta-in trf_clean/ht_candidates.cleaned.fasta \
+    --fasta-out ht_candidates.filtered.noMCR.fasta \
+    --summary candidate_filter_summary.MCR.tsv \
     --outdir Result_HT/cleaned_final \
-    --silva-db /path/to/silva_db \
-    --plastid-db /path/to/plastid_db
+    --rDNA-db /path/to/silva_db \ #fill in this path where you downloaded SILVA database
+    --plastDNA-db /path/to/plastid_db \ #fill in this path where you downloaded plastid database
+    --threads [YOUR_NUMER_OF_THREADS]
 ```
 
 ### Step 4: Clustering & Functional Annotation
