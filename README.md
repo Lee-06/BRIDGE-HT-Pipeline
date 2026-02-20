@@ -138,11 +138,11 @@ python 9a-RenameAndExtractHomologs.py \
     --threads [YOUR_NUMER_OF_THREADS] \
     --min-scaffold-length 20000
 
-# 5B. Remove homologs belonging to species we have identified as contaminated genomes
+# 5b. Remove homologs belonging to species we have identified as contaminated genomes
 python 9b-RemoveSpeciesContaminationCleanHomologs.py \
-    --in-dir Result_HT/homologs
-    --out-dir Result_HT/homologs_cleaned/
-    --remove-species "Betula.nana,Pseudotsuga,menziesii,Quercus.suber,Azolla.filiculoides, Lacbi2,Hordeum.vulgare,Elaeis.oleifera,BlugrR1_1,Oryza.glaberrima.fasta__7_un,Eutrema.yunnanense,Solanum.lycopersicum.fasta__SL2.50ch00, Triticum.aestivum_chunk_0000004.fasta__chrUn,Euphorbia.esula,Saccharum.spontaneum"
+    --in-dir Result_HT/homologs \
+    --out-dir Result_HT/homologs_cleaned/ \
+    --remove-species "Betula.nana,Pseudotsuga.menziesii,Quercus.suber,Azolla.filiculoides, Lacbi2,Hordeum.vulgare,Elaeis.oleifera,BlugrR1_1,Oryza.glaberrima.fasta__7_un,Eutrema.yunnanense,Solanum.lycopersicum.fasta__SL2.50ch00, Triticum.aestivum_chunk_0000004.fasta__chrUn,Euphorbia.esula,Saccharum.spontaneum"
 
 # 5c. Enrich with homologs from "core nt" DB
 python 9c-EnrichHomologsWithCoreNT.py \
@@ -165,7 +165,7 @@ python 9c-EnrichHomologsWithCoreNT.py \
 Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly)
 ```bash
 
-#6a. This makes the trees human-readable by swapping messy assembly IDs with clean species names or gene annotations.
+#6a. This makes the trees human-readable by swapping messy assembly IDs with clean species names or gene annotations in the fasta files headers beforehand.
 python rename_trees_fasta_ids.py \
     -i Result_HT/homologs_cleaned_final_core_nt/ \
     -m plant.fungi.correspondance.tsv \
@@ -185,11 +185,11 @@ python 10-BuildPhylogenies.py \
 
 # 6c. Analyze Topologies
 python 11-AnalyzeTopology.py \
-    --tree-dir Result_HT/phylogenies \
+    --phylo-dir Result_HT/phylogenies_core_nt \
     --out Result_HT/final_candidates_summary.tsv
 
 #6d. Visualization: This script automates the taxonomic annotation of your tree leaves so you can easily analyze the ecological/taxonomic distribution of your hits in R or Python.
-python trees_to_taxonomy_from_taxdump.py
+python trees_to_taxonomy_from_taxdump.py \
     -i Result_HT/phylogenies_core_nt \
     -d ncbi_taxdump/ \
     -o plant_fungi_taxonomy_from_trees.tsv
