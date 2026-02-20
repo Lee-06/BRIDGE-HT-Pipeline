@@ -138,17 +138,20 @@ python 9a-RenameAndExtractHomologs.py \
     --threads [YOUR_NUMER_OF_THREADS] \
     --min-scaffold-length 20000
 
-# 5b. Fetch Homologs from Local DB
-python 9b-FetchHomologs.py \
-    --homologs-dir Result_HT/homologs_prep \
-    --core-db databases/local_genomes_db \
-    --plants-dir data/plants \
-    --fungi-dir data/fungi \
-    --outdir Result_HT/homologs_fetched \
-    --max-plant-species 50 \
-    --max-fungi-species 50 \
-    --plants-taxids taxonomy/plants.taxids \
-    --fungi-taxids taxonomy/fungi.taxids \
+# 5b. Enrich with homologs from "core nt" DB
+python 9b-EnrichHomologsWithCoreNT.py \
+    --homologs-dir Result_HT/homologs_cleaned \
+    --core-db databases/core_nt \
+    --outdir Result_HT/homologs_cleaned_final_core_nt \
+    --plants-taxids plants_species.taxids \
+    --fungi-taxids fungi_species.taxids \
+    --taxidlist plants_fungi_species.taxids \
+    --evalue 1e-50 \
+    --min-pident 70 \
+    --min-qcov 60 \
+    --max-hits-plant 150 \
+    --max-hits-fungi 150 \
+    --max-hits-per-species 5 \
     --threads [YOUR_NUMER_OF_THREADS]
 ```
 
