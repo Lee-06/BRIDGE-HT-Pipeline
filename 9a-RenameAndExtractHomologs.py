@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -91,7 +90,6 @@ def parse_eggnog_annotations(annotations_path: Path) -> Dict[str, Dict[str, str]
 
     cols = header_line.split("\t")
 
-    # parse lines after comments
     data: Dict[str, Dict[str, str]] = {}
     with annotations_path.open("r", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -129,7 +127,6 @@ def pick_pfam_function(meta: Dict[str, str]) -> str:
     pf = (meta.get("PFAMs") or "").strip()
     if not pf or pf == "-" or pf.lower() == "nan":
         return "NA"
-    # PFAMs field often looks like "DDE_1,HTH_Tnp_Tc5" or "AAA,CDC48_2,..."
     first = pf.split(",")[0].strip()
     return first if first else "NA"
 
@@ -143,7 +140,7 @@ def ensure_blast_db(fasta: Path) -> None:
     Checks .nin/.nsq/.nhr existence.
     """
     prefix = str(fasta)
-    if Path(prefix + ".nin").exists() or Path(prefix + ".nsq").exists():
+    if Path(prefix + ".nin").exists() or Path(prefix + ".nsq").exists() or Path(prefix + ".nhr").exists():
         return
     print(f"[INFO] makeblastdb for: {fasta.name}")
     try:
@@ -159,9 +156,16 @@ def ensure_blast_db(fasta: Path) -> None:
         raise SystemExit(f"[ERROR] makeblastdb failed for {fasta} (code {e.returncode})")
 
 
-def run_blast(query_fasta: Path, db_fasta: Path, evalue: float, max_target_seqs: int, threads: int) -> List[str]:
+def run_blast_to_file(
+    query_fasta: Path,
+    db_fasta: Path,
+    out_tsv: Path,
+    evalue: float,
+    max_target_seqs: int,
+    threads: int,
+) -> None:
     """
-    Returns BLAST tabular lines.
+    Runs BLAST and writes tabular output to out_tsv.
     """
     outfmt = "6 qseqid sseqid pident length qlen qstart qend sstart send bitscore"
     cmd = [
@@ -172,21 +176,27 @@ def run_blast(query_fasta: Path, db_fasta: Path, evalue: float, max_target_seqs:
         "-outfmt", outfmt,
         "-max_target_seqs", str(max_target_seqs),
         "-num_threads", str(threads),
+        "-out", str(out_tsv),
     ]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     except FileNotFoundError:
         raise SystemExit("[ERROR] blastn not found (install NCBI BLAST+).")
     except subprocess.CalledProcessError as e:
         sys.stderr.write(e.stderr or "")
         raise SystemExit(f"[ERROR] blastn failed on DB {db_fasta} (code {e.returncode})")
 
-    return [ln for ln in res.stdout.splitlines() if ln.strip()]
+
+def read_blast_lines(tsv: Path) -> List[str]:
+    if not tsv.exists():
+        return []
+    with tsv.open("r", encoding="utf-8", errors="replace") as f:
+        return [ln.strip() for ln in f if ln.strip()]
 
 
-def extract_hits_from_genome(
+def extract_hits_from_genome_index(
     blast_lines: List[str],
-    genome_seqs: Dict[str, SeqIO.SeqRecord],
+    genome_index,
     min_identity: float,
     min_coverage: float,
     min_scaffold_length: int,
@@ -196,12 +206,9 @@ def extract_hits_from_genome(
     Filters:
       pident >= min_identity
       alen >= min_coverage * qlen
-      scaffold length >= min_scaffold_length (based on genome sequence lengths)
+      scaffold length >= min_scaffold_length
     """
     hits_by_query = defaultdict(list)
-
-    # scaffold lengths from loaded genome
-    scaffold_len = {k: len(v.seq) for k, v in genome_seqs.items()}
 
     for line in blast_lines:
         parts = line.split("\t")
@@ -209,24 +216,32 @@ def extract_hits_from_genome(
             continue
 
         qid, sid, pident, alen, qlen, qstart, qend, sstart, send, bitscore = parts
-        pident = float(pident)
-        alen = int(alen)
-        qlen = int(qlen)
+        try:
+            pident = float(pident)
+            alen = int(alen)
+            qlen = int(qlen)
+            s1, s2 = int(sstart), int(send)
+        except ValueError:
+            continue
 
         if pident < min_identity:
             continue
         if alen < int(min_coverage * qlen):
             continue
-        if scaffold_len.get(sid, 0) < min_scaffold_length:
+
+        if sid not in genome_index:
             continue
-        if sid not in genome_seqs:
+        try:
+            subj_len = len(genome_index[sid].seq)
+        except Exception:
+            continue
+        if subj_len < min_scaffold_length:
             continue
 
-        s1, s2 = int(sstart), int(send)
         strand = "+" if s1 <= s2 else "-"
         start, end = (s1, s2) if s1 <= s2 else (s2, s1)
 
-        seq = genome_seqs[sid].seq[start - 1:end]
+        seq = genome_index[sid].seq[start - 1:end]
         if strand == "-":
             seq = seq.reverse_complement()
 
@@ -258,6 +273,14 @@ def main():
     ap.add_argument("--homologs-dir", default="homologs", type=str,
                     help="Subdirectory name inside --outdir for per-candidate homolog multifastas (default: homologs)")
 
+    # NEW: BLAST results saving
+    ap.add_argument("--blast-results-dir", default="blast_results", type=str,
+                    help="Subdirectory inside --outdir to store BLAST TSV per genome (default: blast_results)")
+    ap.add_argument("--no-reuse-blast", action="store_true",
+                    help="Do NOT reuse existing BLAST TSV files; rerun BLAST unless --force-blast is also false (default: reuse)")
+    ap.add_argument("--force-blast", action="store_true",
+                    help="Force rerun BLAST even if TSV exists (overwrites TSV).")
+
     # Renaming outputs
     ap.add_argument("--renamed-fasta", default="ht_candidates.renamed.fasta", type=str,
                     help="Renamed candidates FASTA filename (in --outdir)")
@@ -286,6 +309,11 @@ def main():
     args.outdir.mkdir(parents=True, exist_ok=True)
     homologs_dir = args.outdir / args.homologs_dir
     homologs_dir.mkdir(parents=True, exist_ok=True)
+
+    blast_dir = args.outdir / args.blast_results_dir
+    blast_dir.mkdir(parents=True, exist_ok=True)
+
+    reuse_blast = not args.no_reuse_blast
 
     # Parse EggNOG metadata
     eggnog = parse_eggnog_annotations(args.annotations)
@@ -319,7 +347,6 @@ def main():
 
             # guarantee uniqueness even if function texts collide
             if new_id in new_to_meta:
-                # add small suffix
                 suffix = 2
                 base = new_id
                 while f"{base}_{suffix}" in new_to_meta:
@@ -336,9 +363,8 @@ def main():
 
             rec.id = new_id
             rec.name = new_id
-            rec.description = ""  # keep headers clean
+            rec.description = ""
 
-    # Write renamed FASTA
     with renamed_path.open("w", encoding="utf-8") as out:
         SeqIO.write(candidate_records, out, "fasta")
 
@@ -369,42 +395,72 @@ def main():
 
         ensure_blast_db(genome_fa)
 
-        blast_lines = run_blast(
-            query_fasta=renamed_path,
-            db_fasta=genome_fa,
-            evalue=args.evalue,
-            max_target_seqs=args.max_seqs,
-            threads=args.threads,
-        )
+        # BLAST output file for this genome
+        # include gtype to avoid name collisions if same filename exists in both dirs
+        blast_tsv = blast_dir / f"{gtype}__{genome_fa.stem}.blast.tsv"
+
+        need_run = True
+        if blast_tsv.exists():
+            if args.force_blast:
+                need_run = True
+            elif reuse_blast:
+                need_run = False
+            else:
+                need_run = True
+
+        if need_run:
+            if args.force_blast and blast_tsv.exists():
+                # overwrite on purpose
+                blast_tsv.unlink()
+            print(f"[INFO]    blastn -> {blast_tsv.name}")
+            run_blast_to_file(
+                query_fasta=renamed_path,
+                db_fasta=genome_fa,
+                out_tsv=blast_tsv,
+                evalue=args.evalue,
+                max_target_seqs=args.max_seqs,
+                threads=args.threads,
+            )
+        else:
+            print(f"[INFO]    reuse BLAST TSV: {blast_tsv.name}")
+
+        blast_lines = read_blast_lines(blast_tsv)
         if not blast_lines:
             continue
 
-        # Load genome once (needed for extraction)
+        # Index genome (lazy access; avoids loading full genome into RAM)
         try:
-            genome_seqs = SeqIO.to_dict(SeqIO.parse(str(genome_fa), "fasta"))
+            genome_index = SeqIO.index(str(genome_fa), "fasta")
         except Exception as e:
-            print(f"[WARNING] Could not parse {genome_fa}: {e}", file=sys.stderr)
+            print(f"[WARNING] Could not index {genome_fa}: {e}", file=sys.stderr)
             continue
 
-        hits = extract_hits_from_genome(
+        hits = extract_hits_from_genome_index(
             blast_lines=blast_lines,
-            genome_seqs=genome_seqs,
+            genome_index=genome_index,
             min_identity=args.identity,
             min_coverage=args.coverage,
             min_scaffold_length=args.min_scaffold_length,
         )
 
-        # Append per candidate file
+        # write homolog multifastas per candidate (append)
         for qid, regions in hits.items():
-            # qid is the renamed id
             out_fa = homologs_dir / f"{qid}.fasta"
             with out_fa.open("a", encoding="utf-8") as out:
                 for sid, start, end, strand, seq in regions:
                     header = f"{qid}__{gtype}__{gname}__{sid}:{start}-{end}({strand})"
                     out.write(f">{header}\n{seq}\n")
 
+        # close index (important on some systems)
+        try:
+            genome_index.close()
+        except Exception:
+            pass
+
+    print(f"[DONE] BLAST TSV written to: {blast_dir}")
     print(f"[DONE] Homolog multifastas written to: {homologs_dir}")
 
 
 if __name__ == "__main__":
     main()
+
