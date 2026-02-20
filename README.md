@@ -121,7 +121,7 @@ python 8-FilterHousekeeping.py \
 ```
 
 ### Step 5: Homolog Retrieval (Balanced Selection)
-Retrieves homologs from a local nucleotide database. The script automatically creates an efficient **BLASTDB Alias** from your input genomes if the database doesn't exist yet.
+Retrieves homologs from both local nucleotide database and optionally online databases (core_nt)
 ```bash
 # 5a. Prepare FASTA headers and fetch homologs from local DB
 python 9a-RenameAndExtractHomologs.py \
