@@ -138,8 +138,14 @@ python 9a-RenameAndExtractHomologs.py \
     --threads [YOUR_NUMER_OF_THREADS] \
     --min-scaffold-length 20000
 
-# 5b. Enrich with homologs from "core nt" DB
-python 9b-EnrichHomologsWithCoreNT.py \
+# 5B. Remove homologs belonging to species we have identified as contaminated genomes
+python 9b-RemoveSpeciesContaminationCleanHomologs.py \
+    --in-dir Result_HT/homologs
+    --out-dir Result_HT/homologs_cleaned/
+    --remove-species "Betula.nana,Pseudotsuga,menziesii,Quercus.suber,Azolla.filiculoides, Lacbi2,Hordeum.vulgare,Elaeis.oleifera,BlugrR1_1,Oryza.glaberrima.fasta__7_un,Eutrema.yunnanense,Solanum.lycopersicum.fasta__SL2.50ch00, Triticum.aestivum_chunk_0000004.fasta__chrUn,Euphorbia.esula,Saccharum.spontaneum"
+
+# 5c. Enrich with homologs from "core nt" DB
+python 9c-EnrichHomologsWithCoreNT.py \
     --homologs-dir Result_HT/homologs_cleaned \
     --core-db databases/core_nt \
     --outdir Result_HT/homologs_cleaned_final_core_nt \
