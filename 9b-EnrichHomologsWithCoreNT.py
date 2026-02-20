@@ -2,7 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-9b-FetchHomologs.py
+From homologs/: build queries per multifasta, BLAST core_nt, write enriched results to homologs_nt/
+WITH original homologs sequences (INCLUDING the query sequences) + added core_nt sequences.
 """
 
 import argparse
@@ -11,9 +12,10 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Set
-from shutil import which
+
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
+from shutil import which
 
 
 # -------------------------
@@ -59,6 +61,7 @@ def sanitize_species_name(s: str) -> str:
 
 
 def load_taxid_set(path: Path) -> Set[str]:
+    """Load one taxid per line into a set of strings."""
     tax = set()
     with path.open("r", encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -81,87 +84,14 @@ def normalize_id_unique(base_id: str, existing: Set[str]) -> str:
         i += 1
 
 
-# -------------------------
-# DB Setup & Indexing
-# -------------------------
-
-def is_indexed(fasta_path: Path) -> bool:
-    """Checks if BLAST DB files (.nsq, .nin, .nhr) exist."""
-    # Blast+ creates .nsq or .nal depending on version/size, but .nsq is standard for nucl
-    # We check for at least .nsq and .nin
-    base = fasta_path
-    # Check standard suffixes
-    has_nsq = (base.with_name(base.name + ".nsq").exists())
-    has_nin = (base.with_name(base.name + ".nin").exists())
-    return has_nsq and has_nin
-
-
-def ensure_indexed(fasta_path: Path):
-    if is_indexed(fasta_path):
-        return
-    print(f"[SETUP] Indexing {fasta_path.name} ...")
-    cmd = ["makeblastdb", "-in", str(fasta_path), "-dbtype", "nucl", "-parse_seqids", "-out", str(fasta_path)]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
-
-
-def setup_local_blastdb(core_db_path: Path, plants_dir: Path, fungi_dir: Path):
+def extract_taxid_from_header(rec: SeqRecord) -> str:
     """
-    Creates a BLASTDB alias at `core_db_path` pointing to all FASTA files 
-    in plants_dir and fungi_dir. Handles indexing if missing.
+    Try to extract taxid from input record header without changing anything.
+    Supports patterns: taxid=12345 or taxid_12345
     """
-    if core_db_path.exists() or (core_db_path.with_suffix(".nal").exists()):
-        # Alias or DB seems to exist
-        # We could check validity, but let's assume if file exists it's OK.
-        # Note: blastdb_aliastool creates .nal file.
-        if core_db_path.with_suffix(".nal").exists():
-            return
-        # If user gave a prefix that exists as a file (?)
-        return
-
-    print(f"[SETUP] Local DB alias not found at {core_db_path}. Creating it now...")
-    
-    if not plants_dir or not plants_dir.exists():
-        sys.exit(f"[ERROR] Cannot build DB: --plants-dir {plants_dir} missing.")
-    if not fungi_dir or not fungi_dir.exists():
-        sys.exit(f"[ERROR] Cannot build DB: --fungi-dir {fungi_dir} missing.")
-
-    # 1. Gather all FASTAs
-    all_fastas = []
-    all_fastas.extend(sorted(plants_dir.glob("*.fasta")))
-    all_fastas.extend(sorted(plants_dir.glob("*.fa")))
-    all_fastas.extend(sorted(fungi_dir.glob("*.fasta")))
-    all_fastas.extend(sorted(fungi_dir.glob("*.fa")))
-    
-    if not all_fastas:
-        sys.exit("[ERROR] No FASTA files found to build database.")
-
-    # 2. Ensure all are indexed
-    print(f"[SETUP] Verifying/Indexing {len(all_fastas)} genomes...")
-    for fa in all_fastas:
-        ensure_indexed(fa)
-
-    # 3. Create Alias
-    # blastdb_aliastool requires a list of DB names (absolute paths preferred)
-    db_list_file = core_db_path.parent / "temp_db_list.txt"
-    core_db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with db_list_file.open("w") as f:
-        for fa in all_fastas:
-            f.write(str(fa.resolve()) + "\n")
-
-    print(f"[SETUP] Creating alias {core_db_path} ...")
-    cmd = [
-        "blastdb_aliastool",
-        "-dblist_file", str(db_list_file),
-        "-dbtype", "nucl",
-        "-out", str(core_db_path),
-        "-title", "All_Genomes_Alias"
-    ]
-    subprocess.run(cmd, check=True)
-    
-    # Cleanup list
-    db_list_file.unlink()
-    print("[SETUP] Database alias created successfully.")
+    txt = (rec.id or "") + " " + (rec.description or "")
+    m = re.search(r"(?:taxid=|taxid_)(\d+)", txt)
+    return m.group(1) if m else ""
 
 
 # -------------------------
@@ -183,7 +113,6 @@ def run_blast_multiquery(
     blast_program: str,
     threads: int,
     evalue: float,
-    max_target_seqs: int,
     extra_args: List[str],
     out_tsv: Path
 ) -> None:
@@ -196,7 +125,6 @@ def run_blast_multiquery(
         "-num_threads", str(threads),
         "-evalue", str(evalue),
         "-max_hsps", "1",
-        "-max_target_seqs", str(max_target_seqs),
     ] + extra_args + [
         "-out", str(out_tsv)
     ]
@@ -248,32 +176,41 @@ def sort_hits_by_quality(hits: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return sorted(hits, key=keyfun)
 
 
-def filter_and_select_hits_balanced_by_species(
+def filter_and_select_hits_by_query_kind(
     hits: List[Dict[str, str]],
     plants_taxids: Set[str],
     fungi_taxids: Set[str],
+    q_to_qkind: Dict[str, str],
     min_pident: float,
     min_qcov: float,
     max_hits_per_species: int,
-    max_plant_species: int,
-    max_fungi_species: int,
-    max_other_species: int,
+    max_hits_plant: int,
+    max_hits_fungi: int,
     exclude_self: bool = True
 ) -> Dict[str, List[Dict[str, str]]]:
+    """
+    For each query:
+      - if query kind = plant => keep only PLANT hits (cap max_hits_plant)
+      - if query kind = fungi => keep only FUNGI hits (cap max_hits_fungi)
+    plus max_hits_per_species within the target kingdom.
+    """
     by_q: Dict[str, List[Dict[str, str]]] = {}
 
+    # Filter
     for h in hits:
         q = h.get("qseqid", "")
-        if not q:
-            continue
-        if exclude_self and h.get("sseqid", "") == q:
+        if not q or q not in q_to_qkind:
             continue
 
         pident = parse_float(h.get("pident", ""))
         qcov = hit_qcov_pct(h)
         if pident is None or qcov is None:
             continue
-        if pident < min_pident or qcov < min_qcov:
+        if pident < min_pident:
+            continue
+        if qcov < min_qcov:
+            continue
+        if exclude_self and h.get("sseqid", "") == q:
             continue
 
         by_q.setdefault(q, []).append(h)
@@ -282,58 +219,29 @@ def filter_and_select_hits_balanced_by_species(
 
     for q, qhits in by_q.items():
         qhits = sort_hits_by_quality(qhits)
-
-        plant_species: Set[str] = set()
-        fungi_species: Set[str] = set()
-        other_species: Set[str] = set()
-
-        plant_counts: Dict[str, int] = {}
-        fungi_counts: Dict[str, int] = {}
-        other_counts: Dict[str, int] = {}
+        target = q_to_qkind[q]  # "plant" or "fungi"
+        cap = max_hits_plant if target == "plant" else max_hits_fungi
 
         out: List[Dict[str, str]] = []
+        per_sp: Dict[str, int] = {}
 
         for h in qhits:
             tax = (h.get("staxids", "") or "").split(";")[0].strip()
             kind = kingdom_from_taxid(tax, plants_taxids, fungi_taxids)
+            if kind != target:
+                continue
 
             sci = sanitize_species_name(h.get("sscinames", ""))
             if sci == "unknown":
                 sci = f"taxid_{tax}" if tax else "unknown"
 
-            if kind == "plant":
-                if sci not in plant_species and len(plant_species) >= max_plant_species:
-                    continue
-                if max_hits_per_species > 0 and plant_counts.get(sci, 0) >= max_hits_per_species:
-                    continue
-                plant_species.add(sci)
-                plant_counts[sci] = plant_counts.get(sci, 0) + 1
-                out.append(h)
+            if len(out) >= cap:
+                break
+            if max_hits_per_species > 0 and per_sp.get(sci, 0) >= max_hits_per_species:
+                continue
 
-            elif kind == "fungi":
-                if sci not in fungi_species and len(fungi_species) >= max_fungi_species:
-                    continue
-                if max_hits_per_species > 0 and fungi_counts.get(sci, 0) >= max_hits_per_species:
-                    continue
-                fungi_species.add(sci)
-                fungi_counts[sci] = fungi_counts.get(sci, 0) + 1
-                out.append(h)
-
-            else:
-                if max_other_species <= 0:
-                    continue
-                if sci not in other_species and len(other_species) >= max_other_species:
-                    continue
-                if max_hits_per_species > 0 and other_counts.get(sci, 0) >= max_hits_per_species:
-                    continue
-                other_species.add(sci)
-                other_counts[sci] = other_counts.get(sci, 0) + 1
-                out.append(h)
-
-            if (len(plant_species) >= max_plant_species and
-                len(fungi_species) >= max_fungi_species and
-                (len(other_species) >= max_other_species or max_other_species <= 0)):
-                pass
+            out.append(h)
+            per_sp[sci] = per_sp.get(sci, 0) + 1
 
         selected[q] = out
 
@@ -351,8 +259,9 @@ def fetch_subseq_blastdbcmd(core_db: str, sseqid: str, sstart: int, send: int) -
     cmd = ["blastdbcmd", "-db", core_db, "-entry", sseqid, "-range", f"{start}-{end}", "-strand", strand]
     rc, out, err = run_capture(cmd)
     if rc != 0 or not out.strip():
-        # Clean retry? Sometimes blastdbcmd fails on complex IDs.
-        # But usually fatal.
+        eprint(f"[WARN] blastdbcmd failed for {sseqid}:{start}-{end} ({strand})")
+        if err.strip():
+            eprint(err.strip())
         return None
     return out
 
@@ -364,6 +273,10 @@ def make_core_nt_record(
     plants_taxids: Set[str],
     fungi_taxids: Set[str]
 ) -> Optional[SeqRecord]:
+    """
+    KEEP HEADER STYLE (unchanged):
+      >{query_file_stem}__{fungi|plant|other}__{Species}__{sseqid}:{start}-{end}(+/-)
+    """
     from io import StringIO
     recs = list(SeqIO.parse(StringIO(fasta_text), "fasta"))
     if not recs:
@@ -401,15 +314,35 @@ def make_core_nt_record(
 
 
 # -------------------------
-# Longest query extraction
+# Query picking by kingdom (input homologs)
 # -------------------------
 
-def pick_longest_record(records: List[SeqRecord]) -> SeqRecord:
-    if not records:
-        raise ValueError("Empty FASTA records")
-    best = records[0]
-    best_len = len(best.seq)
-    for r in records[1:]:
+def kingdom_of_input_record(rec: SeqRecord, plants: Set[str], fungi: Set[str]) -> str:
+    """
+    Detect plant/fungi in INPUT records without changing headers:
+    - Prefer explicit markers in id/description: __plant__ or __fungi__
+    - Fallback to taxid in header (taxid= / taxid_) using provided sets
+    """
+    txt = ((rec.id or "") + " " + (rec.description or "")).lower()
+    if "__fungi__" in txt:
+        return "fungi"
+    if "__plant__" in txt:
+        return "plant"
+
+    tax = extract_taxid_from_header(rec)
+    if tax:
+        return kingdom_from_taxid(tax, plants, fungi)
+
+    return "other"
+
+
+def pick_longest_record_by_kind(records: List[SeqRecord], kind: str,
+                                plants: Set[str], fungi: Set[str]) -> Optional[SeqRecord]:
+    best: Optional[SeqRecord] = None
+    best_len = -1
+    for r in records:
+        if kingdom_of_input_record(r, plants, fungi) != kind:
+            continue
         L = len(r.seq)
         if L > best_len:
             best = r
@@ -423,69 +356,67 @@ def pick_longest_record(records: List[SeqRecord]) -> SeqRecord:
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Enrich homologs with core_nt from longest-per-file queries."
+        description="From homologs/: build queries (longest plant + longest fungi per multifasta), BLAST core_nt, "
+                    "write enriched results to homologs_nt/ WITH original homologs + added core_nt."
     )
 
     ap.add_argument("--homologs-dir", required=True, type=Path,
-                    help="Directory with existing homolog multifastas")
+                    help="Directory with existing homolog multifastas (e.g. Result_HT/homologs)")
     ap.add_argument("--pattern", default="*.fasta", help="Pattern (default: *.fasta)")
 
-    ap.add_argument("--core-db", required=True, type=Path,
-                    help="Path to local BLAST DB (Alias). If missing, will try to create it using --plants-dir and --fungi-dir.")
-    
-    # New args for auto-setup
-    ap.add_argument("--plants-dir", type=Path, default=None,
-                    help="Directory containing Plant genomes (required if DB needs to be created)")
-    ap.add_argument("--fungi-dir", type=Path, default=None,
-                    help="Directory containing Fungi genomes (required if DB needs to be created)")
-
+    ap.add_argument("--core-db", required=True, type=str, help="BLAST DB name/path for core_nt (e.g. core_nt)")
     ap.add_argument("--outdir", required=True, type=Path,
-                    help="Output directory")
+                    help="Output directory (e.g. Result_HT/homologs_nt). Files keep same names as in homologs-dir.")
 
+    # Taxonomy labeling for headers
     ap.add_argument("--plants-taxids", required=True, type=Path,
-                    help="Taxid list for plant species")
+                    help="Taxid list for plant species (one taxid per line)")
     ap.add_argument("--fungi-taxids", required=True, type=Path,
-                    help="Taxid list for fungi species")
+                    help="Taxid list for fungi species (one taxid per line)")
+
+    # Optional restriction for BLAST
+    ap.add_argument("--taxidlist", type=Path, default=None,
+                    help="Optional taxidlist passed to BLAST -taxidlist (e.g. plants_fungi_species.taxids)")
 
     # BLAST parameters
-    ap.add_argument("--blast-program", default="blastn")
+    ap.add_argument("--blast-program", default="blastn", help="BLAST program (default: blastn)")
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--evalue", type=float, default=1e-50)
-    ap.add_argument("--max-target-seqs", type=int, default=5000)
-
-    # filters
     ap.add_argument("--min-pident", type=float, default=70.0)
     ap.add_argument("--min-qcov", type=float, default=50.0)
 
-    # selection
-    ap.add_argument("--max-hits-per-species", type=int, default=3)
-    ap.add_argument("--max-plant-species", type=int, default=50)
-    ap.add_argument("--max-fungi-species", type=int, default=50)
-    ap.add_argument("--max-other-species", type=int, default=50)
+    ap.add_argument("--max-hits-per-species", type=int, default=3,
+                    help="Max hits per species WITHIN the target kingdom (default: 3). Use 0 to disable.")
+    ap.add_argument("--max-hits-plant", type=int, default=50,
+                    help="Max selected PLANT hits per plant-query (default: 50)")
+    ap.add_argument("--max-hits-fungi", type=int, default=50,
+                    help="Max selected FUNGI hits per fungi-query (default: 50)")
+    ap.add_argument("--max-hits-other", type=int, default=50,
+                    help="Kept for compatibility (not used by this query strategy).")
 
-    ap.add_argument("--exclude-self", action="store_true", default=True)
+    ap.add_argument("--exclude-self", action="store_true", default=True,
+                    help="Exclude hits where sseqid == qseqid (default: ON)")
     ap.add_argument("--include-self", dest="exclude_self", action="store_false")
 
-    ap.add_argument("--summary", type=Path, default=None)
-    ap.add_argument("--keep-temp", action="store_true")
+    ap.add_argument("--summary", type=Path, default=None,
+                    help="Summary TSV (default: <outdir>/core_nt_from_longest_summary.tsv)")
+    ap.add_argument("--keep-temp", action="store_true",
+                    help="Keep temporary query fasta / blast tsv")
 
     args = ap.parse_args()
 
-    # Checks
     if not args.homologs_dir.is_dir():
         sys.exit(f"[ERROR] homologs-dir not found: {args.homologs_dir}")
+
     if not args.plants_taxids.exists():
         sys.exit(f"[ERROR] plants-taxids not found: {args.plants_taxids}")
     if not args.fungi_taxids.exists():
         sys.exit(f"[ERROR] fungi-taxids not found: {args.fungi_taxids}")
+    if args.taxidlist is not None and not args.taxidlist.exists():
+        sys.exit(f"[ERROR] taxidlist not found: {args.taxidlist}")
 
     check_tool(args.blast_program)
     check_tool("blastdbcmd")
-    check_tool("makeblastdb")
-    check_tool("blastdb_aliastool")
-
-    # AUTO-SETUP DB
-    setup_local_blastdb(args.core_db, args.plants_dir, args.fungi_dir)
 
     args.outdir.mkdir(parents=True, exist_ok=True)
     summary_path = args.summary or (args.outdir / "core_nt_from_longest_summary.tsv")
@@ -495,92 +426,137 @@ def main():
 
     fasta_files = sorted(args.homologs_dir.glob(args.pattern))
     if not fasta_files:
-        sys.exit(f"[ERROR] No FASTA files found in {args.homologs_dir}")
+        sys.exit(f"[ERROR] No FASTA files found in {args.homologs_dir} with pattern {args.pattern}")
 
+    # Temp files
     tmp_query_fasta = args.outdir / "_tmp_longest_queries.fasta"
     tmp_blast_tsv = args.outdir / "_tmp_core_nt_blast.tsv"
 
+    # Query mappings
+    # qseqid is unique per query: "<stem>__Qplant" or "<stem>__Qfungi"
     q_to_file: Dict[str, Path] = {}
+    q_to_qkind: Dict[str, str] = {}
+
+    # Also keep list of stems to write outputs per file
+    stem_to_file: Dict[str, Path] = {}
+
     queries: List[SeqRecord] = []
 
     for fp in fasta_files:
         stem = fp.stem
+        stem_to_file[stem] = fp
+
         recs = list(SeqIO.parse(str(fp), "fasta"))
         if not recs:
+            eprint(f"[WARN] Empty fasta, skipping: {fp.name}")
             continue
-        longest = pick_longest_record(recs)
-        qrec = longest[:]
-        qrec.id = stem
-        qrec.name = stem
-        qrec.description = ""
-        queries.append(qrec)
-        q_to_file[stem] = fp
+
+        # Longest plant
+        qplant = pick_longest_record_by_kind(recs, "plant", plants_set, fungi_set)
+        if qplant is not None:
+            qid = f"{stem}__Qplant"
+            qrec = qplant[:]
+            qrec.id = qid
+            qrec.name = qid
+            qrec.description = ""
+            queries.append(qrec)
+            q_to_file[qid] = fp
+            q_to_qkind[qid] = "plant"
+
+        # Longest fungi
+        qfungi = pick_longest_record_by_kind(recs, "fungi", plants_set, fungi_set)
+        if qfungi is not None:
+            qid = f"{stem}__Qfungi"
+            qrec = qfungi[:]
+            qrec.id = qid
+            qrec.name = qid
+            qrec.description = ""
+            queries.append(qrec)
+            q_to_file[qid] = fp
+            q_to_qkind[qid] = "fungi"
 
     if not queries:
-        sys.exit("[ERROR] No queries extracted.")
+        sys.exit("[ERROR] No queries extracted. (No plant/fungi records detected in inputs?)")
 
     SeqIO.write(queries, str(tmp_query_fasta), "fasta")
-    print(f"[INFO] Queries built: {len(queries)}")
+    print(f"[INFO] Queries built (longest plant + longest fungi per file when present): {len(queries)}")
+    print(f"[INFO] Temp query FASTA: {tmp_query_fasta}")
 
-    print(f"[INFO] Running BLAST against {args.core_db} ...")
+    extra_args: List[str] = []
+    if args.taxidlist is not None:
+        extra_args += ["-taxidlist", str(args.taxidlist)]
+
+    # Run BLAST
+    print("[INFO] Running BLAST against core_nt ...")
     run_blast_multiquery(
         query_fasta=tmp_query_fasta,
-        core_db=str(args.core_db),
+        core_db=args.core_db,
         blast_program=args.blast_program,
         threads=args.threads,
         evalue=args.evalue,
-        max_target_seqs=args.max_target_seqs,
-        extra_args=[],
+        extra_args=extra_args,
         out_tsv=tmp_blast_tsv
     )
 
     hits = load_blast_hits(tmp_blast_tsv)
     print(f"[INFO] Loaded raw hits: {len(hits)}")
 
-    selected = filter_and_select_hits_balanced_by_species(
+    # Select hits by query kind (plant-query => plant hits; fungi-query => fungi hits)
+    selected_by_q = filter_and_select_hits_by_query_kind(
         hits=hits,
         plants_taxids=plants_set,
         fungi_taxids=fungi_set,
+        q_to_qkind=q_to_qkind,
         min_pident=args.min_pident,
         min_qcov=args.min_qcov,
         max_hits_per_species=args.max_hits_per_species,
-        max_plant_species=args.max_plant_species,
-        max_fungi_species=args.max_fungi_species,
-        max_other_species=args.max_other_species,
+        max_hits_plant=args.max_hits_plant,
+        max_hits_fungi=args.max_hits_fungi,
         exclude_self=args.exclude_self
     )
 
+    # Write per-candidate outputs (keep same filename as homologs/)
     with summary_path.open("w", encoding="utf-8") as s:
         s.write(
             "candidate_file\tqseqid\tstatus\tn_in_homologs\t"
-            "n_selected_total\tn_added_core_nt\t"
-            "plant_species\tfungi_species\tother_species\t"
-            "reason\n"
+            "n_selected_total\tn_selected_plant\tn_selected_fungi\tn_selected_other\t"
+            "n_added_core_nt\treason\n"
         )
 
-        for qseqid in sorted(q_to_file.keys()):
-            src_fp = q_to_file[qseqid]
-            out_fp = args.outdir / src_fp.name
+        for stem in sorted(stem_to_file.keys()):
+            src_fp = stem_to_file[stem]
+            out_fp = args.outdir / src_fp.name  # keep same filename
 
-            base_recs = list(SeqIO.parse(str(src_fp), "fasta"))
-            if not base_recs:
-                s.write(f"{src_fp.name}\t{qseqid}\tEMPTY\t0\t0\t0\t0\t0\t0\tempty_source_fasta\n")
+            recs = list(SeqIO.parse(str(src_fp), "fasta"))
+            if not recs:
+                s.write(f"{src_fp.name}\t{stem}\tEMPTY\t0\t0\t0\t0\t0\t0\tempty_source_fasta\n")
                 continue
 
-            existing_ids = {r.id for r in base_recs}
-            existing_seqs = {str(r.seq) for r in base_recs}
-            sel_hits = selected.get(qseqid, [])
+            # KEEP ALL original records (do NOT remove the longest query)
+            homolog_recs = recs[:]
 
-            pl_sp = set()
-            fu_sp = set()
-            ot_sp = set()
+            # Dedup sets against existing homologs
+            existing_ids = {r.id for r in homolog_recs}
+            existing_seqs = {str(r.seq) for r in homolog_recs}
+
+            # Collect selected hits for this file from both queries (if present)
+            qid_plant = f"{stem}__Qplant"
+            qid_fungi = f"{stem}__Qfungi"
+            sel_hits: List[Dict[str, str]] = []
+            sel_hits.extend(selected_by_q.get(qid_plant, []))
+            sel_hits.extend(selected_by_q.get(qid_fungi, []))
+
+            # Count selected by kingdom (should be plant+fungi only with this strategy)
+            sel_pl = sel_fu = sel_ot = 0
             for h in sel_hits:
                 tax = (h.get("staxids", "") or "").split(";")[0].strip()
                 k = kingdom_from_taxid(tax, plants_set, fungi_set)
-                sp = sanitize_species_name(h.get("sscinames", ""))
-                if k == "plant": pl_sp.add(sp)
-                elif k == "fungi": fu_sp.add(sp)
-                else: ot_sp.add(sp)
+                if k == "plant":
+                    sel_pl += 1
+                elif k == "fungi":
+                    sel_fu += 1
+                else:
+                    sel_ot += 1
 
             added: List[SeqRecord] = []
             fetch_fail = 0
@@ -589,48 +565,72 @@ def main():
                 sseqid = h.get("sseqid", "")
                 ss = parse_int(h.get("sstart", "0"))
                 se = parse_int(h.get("send", "0"))
-                if not sseqid or ss is None:
+                if not sseqid or ss is None or se is None:
                     fetch_fail += 1
                     continue
 
-                fasta_text = fetch_subseq_blastdbcmd(str(args.core_db), sseqid, ss, se)
+                fasta_text = fetch_subseq_blastdbcmd(args.core_db, sseqid, ss, se)
                 if fasta_text is None:
                     fetch_fail += 1
                     continue
 
-                rec = make_core_nt_record(fasta_text, qseqid, h, plants_set, fungi_set)
-                if rec and rec.id not in existing_ids and str(rec.seq) not in existing_seqs:
-                    rec.id = normalize_id_unique(rec.id, existing_ids)
-                    rec.name = rec.id
-                    existing_ids.add(rec.id)
-                    existing_seqs.add(str(rec.seq))
-                    added.append(rec)
+                # IMPORTANT: keep headers unchanged => use original file stem
+                rec = make_core_nt_record(
+                    fasta_text=fasta_text,
+                    query_file_stem=stem,
+                    hit_row=h,
+                    plants_taxids=plants_set,
+                    fungi_taxids=fungi_set
+                )
+                if rec is None:
+                    fetch_fail += 1
+                    continue
 
-            SeqIO.write(base_recs + added, str(out_fp), "fasta")
+                # Avoid duplicates
+                if rec.id in existing_ids:
+                    continue
+                if str(rec.seq) in existing_seqs:
+                    continue
+
+                rec.id = normalize_id_unique(rec.id, existing_ids)
+                rec.name = rec.id
+
+                existing_ids.add(rec.id)
+                existing_seqs.add(str(rec.seq))
+                added.append(rec)
+
+            # Write final output: ALL original homologs + added core_nt
+            SeqIO.write(homolog_recs + added, str(out_fp), "fasta")
 
             status = "OK"
             reason = "-"
             if not sel_hits:
                 status = "NO_HITS"
-                reason = "no_core_nt_hits"
+                reason = "no_core_nt_hits_after_filtering"
             elif len(added) == 0:
                 status = "NO_NEW_SEQS"
-                reason = "all_hits_failed_or_dup"
-            
+                reason = "all_hits_failed_or_duplicates"
+            elif fetch_fail > 0:
+                status = "OK_WITH_WARNINGS"
+                reason = f"fetch_failures={fetch_fail}"
+
             s.write(
-                f"{src_fp.name}\t{qseqid}\t{status}\t{len(base_recs)}\t"
-                f"{len(sel_hits)}\t{len(added)}\t"
-                f"{len(pl_sp)}\t{len(fu_sp)}\t{len(ot_sp)}\t"
-                f"{reason}\n"
+                f"{src_fp.name}\t{stem}\t{status}\t{len(recs)}\t"
+                f"{len(sel_hits)}\t{sel_pl}\t{sel_fu}\t{sel_ot}\t"
+                f"{len(added)}\t{reason}\n"
             )
 
     print("[SUCCESS] Done.")
+    print(f"[INFO] Output directory: {args.outdir}")
+    print(f"[INFO] Summary TSV     : {summary_path}")
+
     if not args.keep_temp:
         try:
             tmp_query_fasta.unlink(missing_ok=True)
             tmp_blast_tsv.unlink(missing_ok=True)
         except Exception:
             pass
+
 
 if __name__ == "__main__":
     main()
