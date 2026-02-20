@@ -84,8 +84,7 @@ Removes artifacts using Tandem Repeats Finder (TRF) and filters Organelle/rRNA s
 python 4-FilterTandemRepeats.py \
     --selected-dir Result_HT/selected_sequences \
     --outdir Result_HT/cleaned_trf \
-    --mode hardmask \
-    --trf-path /usr/bin/trf
+    --trf-path /usr/bin/trf #this path might vary depending on your installation
 
 # 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
 python 5-FilterOrganelleAndRibosomal.py \
