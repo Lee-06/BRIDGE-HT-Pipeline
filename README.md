@@ -102,15 +102,15 @@ Reduces redundancy using CD-HIT-EST (0.8 identity) and annotates sequences to id
 ```bash
 # 4a. Cluster
 python 6-ClusterCandidates.py \
-    --input Result_HT/cleaned_final/candidates.fasta \
-    --output Result_HT/ht_clusters.fasta \
-    --c 0.8
+    --input ht_candidates.filtered.no.MCR.fasta \
+    --output ht_candidates.filtered.no.MCR.fasta.cluster.fasta
+
 
 # 4b. Annotate (EggNOG)
 python 7-AnnotateEggNOG.py \
-    --clusters-fasta Result_HT/ht_clusters.fasta \
+    --clusters-fasta ht_candidates.filtered.no.MCR.fasta.cluster.fasta \
     --eggnog-data-dir /path/to/eggnog_db \
-    --outdir Result_HT/annotations
+    --outdir eggnof_annotation
 
 # 4c. Filter Housekeeping Genes
 python 8-FilterHousekeeping.py \
