@@ -164,11 +164,15 @@ python 9c-EnrichHomologsWithCoreNT.py \
 ### Step 6: Phylogeny & Automated Topology Analysis
 Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly)
 ```bash
-# 6a. Build Trees
+# 6a. Build phylogenetic trees
 python 10-BuildPhylogenies.py \
-    --homologs-dir Result_HT/homologs_fetched \
-    --outdir Result_HT/phylogenies \
-    --iqtree-threads [YOUR_NUMER_OF_THREADS]
+    --homologs-dir Result_HT/homologs_cleaned_final_core_nt_renamed \
+    --outdir Result_HT/phylogenies_core_nt \
+    --mafft-threads [YOUR_NUMER_OF_THREADS] \
+    --iqtree-threads [YOUR_NUMER_OF_THREADS] \
+    --bb 1000 \
+    --model MFP \
+    --min-seqs 4
 
 # 6b. Analyze Topologies
 python 11-AnalyzeTopology.py \
