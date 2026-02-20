@@ -127,8 +127,8 @@ Retrieves homologs from both local nucleotide database and optionally online dat
 python 9a-RenameAndExtractHomologs.py \
     --candidates Result_HT/ht_clusters.housekeeping_filtered.fasta \
     --annotations eggnog_annotation/ht_annotations.emapper.annotations \
-    --fungi-dir fungi_genome/ \
-    --plant-dir plant_genome \
+    --fungi-dir ./data/fungi \
+    --plant-dir ./data/plants \
     --outdir Result_HT \
     --homologs-dir homologs \
     --identity 70 \
@@ -149,9 +149,9 @@ python 9c-EnrichHomologsWithCoreNT.py \
     --homologs-dir Result_HT/homologs_cleaned \
     --core-db databases/core_nt \
     --outdir Result_HT/homologs_cleaned_final_core_nt \
-    --plants-taxids plants_species.taxids \
-    --fungi-taxids fungi_species.taxids \
-    --taxidlist plants_fungi_species.taxids \
+    --plants-taxids taxonomy/plants_species.taxids \
+    --fungi-taxids taxonomy/fungi_species.taxids \
+    --taxidlist taxonomy/plants_fungi_species.taxids \
     --evalue 1e-50 \
     --min-pident 70 \
     --min-qcov 60 \
@@ -191,7 +191,7 @@ python 11-AnalyzeTopology.py \
 #6d. Visualization: This script automates the taxonomic annotation of your tree leaves so you can easily analyze the ecological/taxonomic distribution of your hits in R or Python.
 python trees_to_taxonomy_from_taxdump.py \
     -i Result_HT/phylogenies_core_nt \
-    -d ncbi_taxdump/ \
+    -d databases/ncbi_taxdump/ \
     -o plant_fungi_taxonomy_from_trees.tsv
 ```
 
