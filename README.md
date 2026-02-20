@@ -123,13 +123,22 @@ python 8-FilterHousekeeping.py \
 ### Step 5: Homolog Retrieval (Balanced Selection)
 Retrieves homologs from a local nucleotide database. The script automatically creates an efficient **BLASTDB Alias** from your input genomes if the database doesn't exist yet.
 ```bash
-# 5a. Prepare FASTA headers
-python 9a-PrepareHomologs.py \
-    --input Result_HT/filtered_candidates/ht_filtered.fasta \
-    --outdir Result_HT/homologs_prep
+# 5a. Prepare FASTA headers and fetch homologs from local DB
+python 9a-RenameAndExtractHomologs.py \
+    --candidates Result_HT/ht_clusters.housekeeping_filtered.fasta \
+    --annotations eggnog_annotation/ht_annotations.emapper.annotations \
+    --fungi-dir fungi_genome/ \
+    --plant-dir plant_genome \
+    --outdir Result_HT \
+    --homologs-dir homologs \
+    --identity 70 \
+    --coverage 0.6 \
+    --evalue 1e-50 \
+    --max-seqs 5 \
+    --threads [YOUR_NUMER_OF_THREADS] \
+    --min-scaffold-length 20000
 
 # 5b. Fetch Homologs from Local DB
-# Note: Provide --plants-dir and --fungi-dir so the script can auto-build the database.
 python 9b-FetchHomologs.py \
     --homologs-dir Result_HT/homologs_prep \
     --core-db databases/local_genomes_db \
