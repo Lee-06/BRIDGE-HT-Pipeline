@@ -132,8 +132,8 @@ def main():
                    help="Output TSV file path")
 
     # Filters as CLI options
-    p.add_argument("--identity", type=float, default=80.0,
-                   help="Minimum percent identity (default: 80)")
+    p.add_argument("--identity", type=float, default=70.0,
+                   help="Minimum percent identity (default: 70)")
     p.add_argument("--min-align-len", type=int, default=500,
                    help="Minimum alignment length (bp) (default: 500)")
     p.add_argument("--min-scaffold-len", type=int, default=20000,
