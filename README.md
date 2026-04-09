@@ -59,7 +59,7 @@ python 1-BlastWholeGenomes.py \
 ```
 
 ### Step 2: Bilateral Filtering & Extraction
-Filters raw hits based on identity (>80%), alignment length (>500bp), and crucial bilateral scaffold length (>20kb in BOTH query and subject) to rule out contamination.
+Filters raw hits based on identity (>70%), alignment length (>500bp), and crucial bilateral scaffold length (>20kb in BOTH query and subject) to rule out contamination.
 ```bash
 # 2a. Filter Hits
 python 2-FilterBlastResults.py \
