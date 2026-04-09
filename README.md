@@ -97,25 +97,30 @@ python 5-FilterOrganelleAndRibosomal.py \
     --threads [YOUR_NUMER_OF_THREADS]
 ```
 
-### Step 4: Clustering & Functional Annotation
-Reduces redundancy using CD-HIT-EST (0.8 identity) and annotates sequences to identify housekeeping genes.
+### Step 4: Clustering, HTT Identification, & Functional Annotation
+Reduces redundancy using CD-HIT-EST (0.8 identity), flags Horizontal Transposon Transfers (HTT) against Repbase, and annotates sequences to filter out housekeeping genes.
 ```bash
 # 4a. Cluster
 python 6-ClusterCandidates.py \
     --input ht_candidates.filtered.no.MCR.fasta \
-    --output ht_candidates.filtered.no.MCR.fasta.cluster.fasta
+    --output Result_HT/ht_candidates.cluster.fasta
 
+# 4b. Identify HTT (Generates a mapping TSV, keeps FASTA intact)
+python 6b-IdentifyHTT.py \
+    --fasta-in Result_HT/ht_candidates.cluster.fasta \
+    --repbase-db databases/repbase/repbase.fasta \
+    --summary Result_HT/htt_identification_summary.tsv
 
-# 4b. Annotate (EggNOG)
+# 4c. Annotate (EggNOG - processes all clustered sequences)
 python 7-AnnotateEggNOG.py \
-    --clusters-fasta ht_candidates.filtered.no.MCR.fasta.cluster.fasta \
-    --eggnog-data-dir /path/to/eggnog_db \ #fill in this path where you downloaded eggnog database
+    --clusters-fasta Result_HT/ht_candidates.cluster.fasta \
+    --eggnog-data-dir /path/to/eggnog_db \
     --outdir eggnog_annotation \
     --cpu [YOUR_NUMER_OF_THREADS]
 
-# 4c. Filter Housekeeping Genes
+# 4d. Filter Housekeeping Genes
 python 8-FilterHousekeeping.py \
-    --fasta-in ht_candidates.filtered.no.MCR.fasta.cluster.fasta \
+    --fasta-in Result_HT/ht_candidates.cluster.fasta \
     --annotations eggnog_annotation/ht_annotations.emapper.annotations \
     --outdir Result_HT/
 ```
