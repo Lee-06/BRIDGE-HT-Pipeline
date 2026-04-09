@@ -114,7 +114,6 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             "Script 5: Filter candidates by BLASTn against rDNA/rRNA and plastid/mitochondrial databases "
-            "(TE filtering postponed)."
         )
     )
 
