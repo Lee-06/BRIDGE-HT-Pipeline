@@ -1,4 +1,4 @@
-# Bidirectional Fungi-Plant Horizontal Transfer (HT) Detection Pipeline
+# BRIDGE: Bidirectional Recognition and Identification of Genomic Exchanges
 
 ## 📖 Overview
 This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
