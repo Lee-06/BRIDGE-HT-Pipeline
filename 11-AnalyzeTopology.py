@@ -344,6 +344,11 @@ def main():
                     category = "AMBIGUOUS_LOW_SUPPORT"
                     reason = "single_fungi_species_but_not_clearly_embedded"
 
+            elif (n_pl_sp >= 3 and n_fu_sp >= 3 and mixed_count >= 2):
+                status = "REJECT"
+                category = "CONSERVE_FALSE_POSITIVE"
+                reason = f"multiple_supported_mixed_nodes_bootstrap>={thr}_widely_conserved"
+
             elif mixed_count > 0:
                 status = "KEEP"
                 category = "HT_SUPPORTED_CLASSICAL"
@@ -353,11 +358,6 @@ def main():
                 status = "CONGRUENT"
                 category = "CONGRUENT_SEPARATED"
                 reason = "plants_and_fungi_monophyletic_no_supported_mixing"
-
-            elif (n_pl_sp >= 3 and n_fu_sp >= 3 and mixed_count >= 2):
-                status = "REJECT"
-                category = "CONSERVE_FALSE_POSITIVE"
-                reason = f"multiple_supported_mixed_nodes_bootstrap>={thr}"
 
             else:
                 status = "AMBIGUOUS"
