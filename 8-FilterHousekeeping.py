@@ -45,7 +45,7 @@ DEFAULT_KEYWORDS = [
     "RNR1", "RNR2",
     "ribonucleoprotein",
     "RPL10", "RPL3",
-    "RPS3","RPS2"
+    "RPS3","RPS2",
     "rna polymerase",
     "RPT1", "RPT6",
     "RVB2",
@@ -55,7 +55,7 @@ DEFAULT_KEYWORDS = [
     "topoisomerase",
     "tubulin",
     "ubiquitin",
-    "VMA2",
+    "VMA2"
 ]
 
 
