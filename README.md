@@ -105,20 +105,14 @@ python 6-ClusterCandidates.py \
     --input ht_candidates.filtered.no.MCR.fasta \
     --output Result_HT/ht_candidates.cluster.fasta
 
-# 4b. Identify HTT (Generates a mapping TSV, keeps FASTA intact)
-python 6b-IdentifyHTT.py \
-    --fasta-in Result_HT/ht_candidates.cluster.fasta \
-    --repbase-db databases/repbase/repbase.fasta \
-    --summary Result_HT/htt_identification_summary.tsv
-
-# 4c. Annotate (EggNOG - processes all clustered sequences)
+# 4b. Annotate (EggNOG - processes all clustered sequences)
 python 7-AnnotateEggNOG.py \
     --clusters-fasta Result_HT/ht_candidates.cluster.fasta \
     --eggnog-data-dir /path/to/eggnog_db \
     --outdir eggnog_annotation \
     --cpu [YOUR_NUMER_OF_THREADS]
 
-# 4d. Filter Housekeeping Genes
+# 4c. Filter Housekeeping Genes
 python 8-FilterHousekeeping.py \
     --fasta-in Result_HT/ht_candidates.cluster.fasta \
     --annotations eggnog_annotation/ht_annotations.emapper.annotations \
