@@ -3,8 +3,6 @@
 ## 📖 Overview
 Pipeline to detect **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
 
-Detects horizontally transferred **genes (HGT)**. **Transposable elements (TEs)** are *not* filtered out: they pass through as candidates and are **labelled** from their EggNOG annotation (Script 7), so genes and mobile elements can be told apart downstream.
-
 All-vs-all genomic comparison, with bilateral scaffold filtering for contamination, tandem repeat and rRNA removal, and phylogenomic topology analysis for candidate validation.
 
 ---
@@ -16,18 +14,19 @@ The pipeline requires the following tools to be installed and available in your 
 
 | Tool | Purpose |
 | :--- | :--- |
-| **hs-blastn** | High-sensitivity alignment for the initial genome-wide sweep |
-| **BLAST+** | `blastn`, `makeblastdb`, `blastdbcmd` |
-| **Tandem Repeats Finder (TRF)** | Filtering repetitive elements |
-| **CD-HIT-EST** | Clustering nucleotide sequences |
-| **EggNOG-mapper** | Functional annotation (`emapper.py`) |
-| **MAFFT** | Multiple Sequence Alignment |
-| **trimAl** | Alignment trimming |
-| **IQ-TREE 2** | Phylogenetic tree inference (`iqtree2`) |
+| **BLAST+** | `blastn`, `makeblastdb`, `blastdbcmd` (Scripts 1, 2, 5, 9a, 9c) |
+| **samtools** | `.fai` index creation (`samtools faidx`) (Script 2) |
+| **Tandem Repeats Finder (TRF)** | Filtering repetitive elements (Script 4) |
+| **CD-HIT-EST** | Clustering nucleotide sequences (Script 6) |
+| **EggNOG-mapper** | Functional annotation (`emapper.py`) (Script 7) |
+| **taxonkit** | Generating TaxID lists from NCBI taxdump (Script 0) |
+| **MAFFT** | Multiple sequence alignment (Script 10) |
+| **trimAl** | Alignment trimming (Script 10) |
+| **IQ-TREE 2** | Phylogenetic tree inference (`iqtree2`) (Script 10) |
 
 ### Python Dependencies
 ```bash
-pip install pandas biopython numpy scipy ete3
+pip install pandas biopython
 ```
 
 ---
@@ -52,14 +51,19 @@ Scripts are numbered `0` to `11` plus two helpers. Each heading names the script
 
 ### Phase 0 - Database Preparation
 
-**Script 0 - Download & format databases** (EggNOG, taxdump, core_nt, SILVA, organelles)
+> **`core_nt` prerequisite:** Script 0 assumes `core_nt` is already downloaded locally
+> and only creates a BLAST alias over it. `core_nt` is an NCBI database (~300 GB) that
+> must be downloaded manually with `update_blastdb.pl core_nt` or the NCBI FTP before
+> running Script 0. Set `$BLASTDB` to its location. Scripts 9c and 0 both rely on it.
+
+**Script 0 - Download & format databases** (EggNOG, taxdump, SILVA, organelles; creates core_nt alias)
 ```bash
 bash 0-DatabasesPreparation.sh
 ```
 
 ### Phase 1 - Genome-Wide Homology Search
 
-**Script 1 - All-vs-all alignment** (hs-blastn, with smart resume to skip processed pairs)
+**Script 1 - All-vs-all alignment** (blastn, with smart resume to skip already-processed pairs)
 ```bash
 python 1-BlastWholeGenomes.py \
     --plants-dir ./data/plants \
@@ -208,6 +212,11 @@ python 9c-EnrichHomologsWithCoreNT.py \
 Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE), with topology-based classification of candidates (monophyly vs. paraphyly).
 
 **Helper - Rename FASTA/tree IDs** (swap messy assembly IDs for clean species names / gene annotations, for human-readable trees)
+
+> `plant.fungi.correspondance.tsv` is a two-column tab-separated file mapping old
+> IDs to new labels, one pair per line (`old_id<TAB>new_label`). Lines starting with
+> `#` are ignored. You need to create this file manually for your genome set.
+
 ```bash
 python rename_trees_fasta_ids.py \
     -i Result_HT/homologs_cleaned_final_core_nt/ \
@@ -218,6 +227,11 @@ python rename_trees_fasta_ids.py \
 ```
 
 **Script 10 - Build phylogenetic trees**
+
+> `--bb 1000` enables UFBoot bootstrapping, which makes IQ-TREE produce `.contree`
+> (consensus tree) files in addition to `.treefile`. Script 11 reads `.contree` by
+> default, so `--bb` must be kept here.
+
 ```bash
 python 10-BuildPhylogenies.py \
     --homologs-dir Result_HT/homologs_cleaned_final_core_nt_renamed \
@@ -230,10 +244,18 @@ python 10-BuildPhylogenies.py \
 ```
 
 **Script 11 - Analyze topologies**
+
+> `--candidate-kingdom` sets which kingdom the candidate sequences belong to (default:
+> `plant`). Set to `fungi` if your candidates are fungal sequences transferred to plants.
+> `--write-lists` is required to produce the keep/exclude ID text files; without it only
+> the summary TSV is written.
+
 ```bash
 python 11-AnalyzeTopology.py \
     --phylo-dir Result_HT/phylogenies_core_nt \
-    --out Result_HT/final_candidates_summary.tsv
+    --out Result_HT/final_candidates_summary.tsv \
+    --candidate-kingdom fungi \   # or plant, depending on your study design
+    --write-lists
 ```
 
 **Helper - Annotate tree leaves with taxonomy** (for ecological/taxonomic analysis in R or Python)
