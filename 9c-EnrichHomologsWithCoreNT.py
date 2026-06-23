@@ -336,18 +336,39 @@ def kingdom_of_input_record(rec: SeqRecord, plants: Set[str], fungi: Set[str]) -
     return "other"
 
 
-def pick_longest_record_by_kind(records: List[SeqRecord], kind: str,
-                                plants: Set[str], fungi: Set[str]) -> Optional[SeqRecord]:
-    best: Optional[SeqRecord] = None
-    best_len = -1
+def species_from_record_header(rec: SeqRecord) -> str:
+    """
+    Extract species/genome label from the __plant__Species__ or __fungi__Species__
+    header pattern used throughout the pipeline. Falls back to the record ID.
+    """
+    parts = rec.id.split("__")
+    for i, part in enumerate(parts):
+        if part in ("plant", "fungi") and i + 1 < len(parts):
+            return parts[i + 1]
+    return rec.id
+
+
+def pick_representatives_by_kind(
+    records: List[SeqRecord],
+    kind: str,
+    plants: Set[str],
+    fungi: Set[str],
+    max_reps: int,
+) -> List[SeqRecord]:
+    """
+    Select up to max_reps sequences of the given kingdom, one per species
+    (longest sequence wins per species), sorted by length descending.
+    Replaces pick_longest_record_by_kind to improve BLAST query diversity.
+    """
+    by_species: Dict[str, SeqRecord] = {}
     for r in records:
         if kingdom_of_input_record(r, plants, fungi) != kind:
             continue
-        L = len(r.seq)
-        if L > best_len:
-            best = r
-            best_len = L
-    return best
+        sp = species_from_record_header(r)
+        if sp not in by_species or len(r.seq) > len(by_species[sp].seq):
+            by_species[sp] = r
+    reps = sorted(by_species.values(), key=lambda r: len(r.seq), reverse=True)
+    return reps[:max_reps]
 
 
 # -------------------------
@@ -394,12 +415,16 @@ def main():
     ap.add_argument("--max-hits-other", type=int, default=50,
                     help="Kept for compatibility (not used by this query strategy).")
 
+    ap.add_argument("--max-queries-per-kingdom", type=int, default=5,
+                    help="Max representative sequences per kingdom used as BLAST queries "
+                         "(one per species, longest first; default: 5)")
+
     ap.add_argument("--exclude-self", action="store_true", default=True,
                     help="Exclude hits where sseqid == qseqid (default: ON)")
     ap.add_argument("--include-self", dest="exclude_self", action="store_false")
 
     ap.add_argument("--summary", type=Path, default=None,
-                    help="Summary TSV (default: <outdir>/core_nt_from_longest_summary.tsv)")
+                    help="Summary TSV (default: <outdir>/core_nt_enrichment_summary.tsv)")
     ap.add_argument("--keep-temp", action="store_true",
                     help="Keep temporary query fasta / blast tsv")
 
@@ -419,7 +444,7 @@ def main():
     check_tool("blastdbcmd")
 
     args.outdir.mkdir(parents=True, exist_ok=True)
-    summary_path = args.summary or (args.outdir / "core_nt_from_longest_summary.tsv")
+    summary_path = args.summary or (args.outdir / "core_nt_enrichment_summary.tsv")
 
     plants_set = load_taxid_set(args.plants_taxids)
     fungi_set = load_taxid_set(args.fungi_taxids)
@@ -429,15 +454,17 @@ def main():
         sys.exit(f"[ERROR] No FASTA files found in {args.homologs_dir} with pattern {args.pattern}")
 
     # Temp files
-    tmp_query_fasta = args.outdir / "_tmp_longest_queries.fasta"
+    tmp_query_fasta = args.outdir / "_tmp_representative_queries.fasta"
     tmp_blast_tsv = args.outdir / "_tmp_core_nt_blast.tsv"
 
-    # Query mappings
-    # qseqid is unique per query: "<stem>__Qplant" or "<stem>__Qfungi"
+    # Query mappings: qseqid -> source file / kingdom
     q_to_file: Dict[str, Path] = {}
     q_to_qkind: Dict[str, str] = {}
 
-    # Also keep list of stems to write outputs per file
+    # All query IDs grouped by stem, for hit aggregation
+    stem_to_qids: Dict[str, List[str]] = {}
+
+    # stem -> source file, for output writing
     stem_to_file: Dict[str, Path] = {}
 
     queries: List[SeqRecord] = []
@@ -445,41 +472,34 @@ def main():
     for fp in fasta_files:
         stem = fp.stem
         stem_to_file[stem] = fp
+        stem_to_qids[stem] = []
 
         recs = list(SeqIO.parse(str(fp), "fasta"))
         if not recs:
             eprint(f"[WARN] Empty fasta, skipping: {fp.name}")
             continue
 
-        # Longest plant
-        qplant = pick_longest_record_by_kind(recs, "plant", plants_set, fungi_set)
-        if qplant is not None:
-            qid = f"{stem}__Qplant"
-            qrec = qplant[:]
-            qrec.id = qid
-            qrec.name = qid
-            qrec.description = ""
-            queries.append(qrec)
-            q_to_file[qid] = fp
-            q_to_qkind[qid] = "plant"
-
-        # Longest fungi
-        qfungi = pick_longest_record_by_kind(recs, "fungi", plants_set, fungi_set)
-        if qfungi is not None:
-            qid = f"{stem}__Qfungi"
-            qrec = qfungi[:]
-            qrec.id = qid
-            qrec.name = qid
-            qrec.description = ""
-            queries.append(qrec)
-            q_to_file[qid] = fp
-            q_to_qkind[qid] = "fungi"
+        for kind in ("plant", "fungi"):
+            reps = pick_representatives_by_kind(
+                recs, kind, plants_set, fungi_set, args.max_queries_per_kingdom
+            )
+            for i, rep in enumerate(reps):
+                qid = f"{stem}__Q{kind}_{i}"
+                qrec = rep[:]
+                qrec.id = qid
+                qrec.name = qid
+                qrec.description = ""
+                queries.append(qrec)
+                q_to_file[qid] = fp
+                q_to_qkind[qid] = kind
+                stem_to_qids[stem].append(qid)
 
     if not queries:
         sys.exit("[ERROR] No queries extracted. (No plant/fungi records detected in inputs?)")
 
     SeqIO.write(queries, str(tmp_query_fasta), "fasta")
-    print(f"[INFO] Queries built (longest plant + longest fungi per file when present): {len(queries)}")
+    print(f"[INFO] Queries built (up to {args.max_queries_per_kingdom} representatives per kingdom "
+          f"per file, one per species): {len(queries)}")
     print(f"[INFO] Temp query FASTA: {tmp_query_fasta}")
 
     extra_args: List[str] = []
@@ -539,12 +559,10 @@ def main():
             existing_ids = {r.id for r in homolog_recs}
             existing_seqs = {str(r.seq) for r in homolog_recs}
 
-            # Collect selected hits for this file from both queries (if present)
-            qid_plant = f"{stem}__Qplant"
-            qid_fungi = f"{stem}__Qfungi"
+            # Collect selected hits from all representative queries for this file
             sel_hits: List[Dict[str, str]] = []
-            sel_hits.extend(selected_by_q.get(qid_plant, []))
-            sel_hits.extend(selected_by_q.get(qid_fungi, []))
+            for qid in stem_to_qids.get(stem, []):
+                sel_hits.extend(selected_by_q.get(qid, []))
 
             # Count selected by kingdom (should be plant+fungi only with this strategy)
             sel_pl = sel_fu = sel_ot = 0
