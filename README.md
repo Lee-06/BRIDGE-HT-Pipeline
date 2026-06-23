@@ -3,6 +3,8 @@
 ## 📖 Overview
 Pipeline to detect **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
 
+Detects horizontally transferred **genes (HGT)** and **Transposable elements (HTT)**
+
 All-vs-all genomic comparison, with bilateral scaffold filtering for contamination, tandem repeat and rRNA removal, and phylogenomic topology analysis for candidate validation.
 
 ---
