@@ -190,8 +190,14 @@ python 9b-RemoveSpeciesContaminationCleanHomologs.py \
 
 **Script 9c - Enrich with homologs from the "core_nt" DB**
 
+For each cluster, up to `--max-queries-per-kingdom` representative sequences are selected
+per kingdom (one per species, longest within each species, ranked by length descending)
+and used as independent BLAST queries. This improves taxonomic breadth compared to a
+single-sequence query.
+
 > The values below (min-qcov 60%, max-hits 150, max-hits-per-species 5) are higher
 > than the script defaults (50%, 50, 3) and are the values used for this study.
+> `--max-queries-per-kingdom 5` is the script default and was used as-is.
 
 ```bash
 python 9c-EnrichHomologsWithCoreNT.py \
@@ -207,6 +213,7 @@ python 9c-EnrichHomologsWithCoreNT.py \
     --max-hits-plant 150 \
     --max-hits-fungi 150 \
     --max-hits-per-species 5 \
+    --max-queries-per-kingdom 5 \
     --threads [YOUR_NUMBER_OF_THREADS]
 ```
 
