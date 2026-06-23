@@ -1,13 +1,11 @@
 # BRIDGE: Bidirectional Recognition and Identification of Genomic Exchanges
 
 ## 📖 Overview
-This repository contains a comprehensive bioinformatics pipeline designed to identify, filter, and validate **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
+Pipeline to detect **Horizontal Transfer (HT)** events between **Fungi** and **Plants** (bidirectional).
 
-The pipeline detects both:
-* **Genes (HGT)**
-* **Transposable Elements (HTT)**
+Detects horizontally transferred **genes (HGT)**. **Transposable elements (TEs)** are *not* filtered out: they pass through as candidates and are **labelled** from their EggNOG annotation (Script 7), so genes and mobile elements can be told apart downstream.
 
-It performs a massive all-vs-all genomic comparison, applies rigorous filtering for contamination (bilateral scaffold check), removes artifacts (Tandem Repeats, rRNA), and validates candidates using **phylogenomic screening** and **automated topology analysis**.
+All-vs-all genomic comparison, with bilateral scaffold filtering for contamination, tandem repeat and rRNA removal, and phylogenomic topology analysis for candidate validation.
 
 ---
 
@@ -44,24 +42,36 @@ Your input data should be organized as follows:
 
     databases/: Directory to store the combined local BLAST database.
 
-    taxonomy/: (Recommended) Lists of TaxIDs for your specific Plant and Fungi genomes to enable balanced selection in Step 5.
+    taxonomy/: (Recommended) Lists of TaxIDs for your specific Plant and Fungi genomes to enable balanced selection in Script 9c.
+
+---
 
 ## Usage Guide
 
-### Step 1: Genome-Wide Homology Search
-Performs all-vs-all alignment using hs-blastn. Includes a smart resume feature to skip already processed pairs.
+Scripts are numbered `0` to `11` plus two helpers. Each heading names the script it runs (e.g. "Script 9a" runs `9a-RenameAndExtractHomologs.py`). Run in order.
+
+### Phase 0 - Database Preparation
+
+**Script 0 - Download & format databases** (EggNOG, taxdump, core_nt, SILVA, organelles)
+```bash
+bash 0-DatabasesPreparation.sh
+```
+
+### Phase 1 - Genome-Wide Homology Search
+
+**Script 1 - All-vs-all alignment** (hs-blastn, with smart resume to skip processed pairs)
 ```bash
 python 1-BlastWholeGenomes.py \
     --plants-dir ./data/plants \
     --fungi-dir ./data/fungi \
     --output Result_HT \
-    --threads [YOUR_NUMER_OF_THREADS]
+    --threads [YOUR_NUMBER_OF_THREADS]
 ```
 
-### Step 2: Bilateral Filtering & Extraction
-Filters raw hits based on identity (>70%), alignment length (>500bp), and crucial bilateral scaffold length (>20kb in BOTH query and subject) to rule out contamination.
+### Phase 2 - Bilateral Filtering & Extraction
+
+**Script 2 - Filter raw hits** (identity ≥70%, alignment length ≥500 bp, bilateral scaffold length ≥20 kb in BOTH query and subject to rule out contamination)
 ```bash
-# 2a. Filter Hits
 python 2-FilterBlastResults.py \
     --blast-dir Result_HT/blast \
     --fungi-dir ./data/fungi \
@@ -69,60 +79,86 @@ python 2-FilterBlastResults.py \
     --out Result_HT/filtered_blast_results.tsv \
     --min-scaffold-len 20000 \
     --build-fai
+```
 
-# 2b. Extract Candidate Fragments
+**Script 3 - Extract candidate fragments**
+```bash
 python 3-ExtractFasta.py \
     --input-tsv Result_HT/filtered_blast_results.tsv \
     --fungi-dir ./data/fungi \
     --outdir Result_HT/selected_sequences
 ```
 
-### Step 3: Cleaning (Repeats & Organelles/Ribosomal)
-Removes artifacts using Tandem Repeats Finder (TRF) and filters Organelle/rRNA sequences using local BLAST databases.
+### Phase 3 - Cleaning (Repeats & Organelles/Ribosomal)
+
+**Script 4 - Filter tandem repeats** (TRF; three modes available: `split_longest` [default - keeps the longest non-masked fragment], `hardmask` - replaces tandem repeats with Ns, `remove` - strips masked bases entirely)
 ```bash
-# 3a. Filter Tandem Repeats (Mode: hardmask or remove)
 python 4-FilterTandemRepeats.py \
     --selected-dir Result_HT/selected_sequences \
     --outdir trf_clean \
-    --mode hardmask \
-    --trf-path /usr/bin/trf #this path might vary depending on your installation
+    --mode split_longest \
+    --trf-path /usr/bin/trf      # path may vary depending on your installation
+# other --mode options: hardmask (mask with Ns), remove (strip masked bases)
+```
 
-# 3b. Filter Organelles & rRNA (Requires local SILVA/Organelle DBs)
+**Script 5 - Filter organelles & rRNA** (requires local SILVA / organelle DBs)
+```bash
 python 5-FilterOrganelleAndRibosomal.py \
     --fasta-in trf_clean/ht_candidates.cleaned.fasta \
     --fasta-out ht_candidates.filtered.no.MCR.fasta \
     --summary candidate_filter_summary.MCR.tsv \
-    --rDNA-db /path/to/silva_db \ #fill in this path where you downloaded SILVA database
-    --plastDNA-db /path/to/plastid_db \ #fill in this path where you downloaded plastid database
-    --threads [YOUR_NUMER_OF_THREADS]
+    --rDNA-db /path/to/silva_db \       # fill in where you downloaded the SILVA database
+    --plastDNA-db /path/to/plastid_db \ # fill in where you downloaded the plastid database
+    --threads [YOUR_NUMBER_OF_THREADS]
 ```
 
-### Step 4: Clustering, HTT Identification, & Functional Annotation
-Reduces redundancy using CD-HIT-EST (0.8 identity), flags Horizontal Transposon Transfers (HTT) against Repbase, and annotates sequences to filter out housekeeping genes.
+### Phase 4 - Clustering, Annotation & TE Labelling
+
+**Script 6 - Cluster** (CD-HIT-EST, 0.8 identity)
 ```bash
-# 4a. Cluster
 python 6-ClusterCandidates.py \
     --input ht_candidates.filtered.no.MCR.fasta \
     --output Result_HT/ht_candidates.cluster.fasta
+```
 
-# 4b. Annotate (EggNOG - processes all clustered sequences)
+**Script 7 - Functional annotation + TE labelling** (EggNOG-mapper annotates all clustered
+sequences, then immediately labels each candidate as `TE`, `non_TE`, or `unannotated` from
+the annotation it just produced - **non-destructive**: no sequence is removed, so TE
+candidates are kept and can be identified downstream via `te_labels.tsv`)
+```bash
 python 7-AnnotateEggNOG.py \
     --clusters-fasta Result_HT/ht_candidates.cluster.fasta \
     --eggnog-data-dir /path/to/eggnog_db \
     --outdir eggnog_annotation \
-    --cpu [YOUR_NUMER_OF_THREADS]
+    --cpu [YOUR_NUMBER_OF_THREADS]
+# Produces eggnog_annotation/ht_annotations.emapper.annotations
+#      and eggnog_annotation/te_labels.tsv  (TE label per candidate)
+#
+# Optional overrides:
+#   --te-labels-out /other/path/te_labels.tsv   (change output path)
+#   --te-keyword-file my_te_terms.csv           (replace built-in TE signatures)
+#   --skip-te-labelling                         (disable labelling entirely)
+```
 
-# 4c. Filter Housekeeping Genes
+**Script 8 - Filter housekeeping genes** (keyword match on EggNOG annotation; the default
+keyword list does **not** include transposase/transposon, so TE candidates pass through)
+```bash
 python 8-FilterHousekeeping.py \
     --fasta-in Result_HT/ht_candidates.cluster.fasta \
     --annotations eggnog_annotation/ht_annotations.emapper.annotations \
     --outdir Result_HT/
 ```
 
-### Step 5: Homolog Retrieval (Balanced Selection)
-Retrieves homologs from both local nucleotide database and optionally online databases (core_nt)
+### Phase 5 - Homolog Retrieval (Balanced Selection)
+Retrieves homologs from the local nucleotide database and, optionally, online databases (core_nt).
+
+**Script 9a - Rename headers & fetch homologs from the local DB**
+
+> The thresholds below (identity 70%, coverage 0.6, e-value 1e-50, max-seqs 5) are
+> looser than the script defaults (80%, 0.8, 1e-20, 10) and are the values used for
+> this study.
+
 ```bash
-# 5a. Prepare FASTA headers and fetch homologs from local DB
 python 9a-RenameAndExtractHomologs.py \
     --candidates Result_HT/ht_clusters.housekeeping_filtered.fasta \
     --annotations eggnog_annotation/ht_annotations.emapper.annotations \
@@ -134,16 +170,24 @@ python 9a-RenameAndExtractHomologs.py \
     --coverage 0.6 \
     --evalue 1e-50 \
     --max-seqs 5 \
-    --threads [YOUR_NUMER_OF_THREADS] \
+    --threads [YOUR_NUMBER_OF_THREADS] \
     --min-scaffold-length 20000
+```
 
-# 5b. Remove homologs belonging to species we have identified as contaminated genomes
+**Script 9b - Remove homologs from genomes flagged as contaminated**
+```bash
 python 9b-RemoveSpeciesContaminationCleanHomologs.py \
     --in-dir Result_HT/homologs \
     --out-dir Result_HT/homologs_cleaned/ \
-    --remove-species "Betula.nana,Pseudotsuga.menziesii,Quercus.suber,Azolla.filiculoides, Lacbi2,Hordeum.vulgare,Elaeis.oleifera,BlugrR1_1,Oryza.glaberrima.fasta__7_un,Eutrema.yunnanense,Solanum.lycopersicum.fasta__SL2.50ch00, Triticum.aestivum_chunk_0000004.fasta__chrUn,Euphorbia.esula,Saccharum.spontaneum"
+    --remove-species "Species1,Species2,..."   # replace with your own contaminated genomes
+```
 
-# 5c. Enrich with homologs from "core nt" DB
+**Script 9c - Enrich with homologs from the "core_nt" DB**
+
+> The values below (min-qcov 60%, max-hits 150, max-hits-per-species 5) are higher
+> than the script defaults (50%, 50, 3) and are the values used for this study.
+
+```bash
 python 9c-EnrichHomologsWithCoreNT.py \
     --homologs-dir Result_HT/homologs_cleaned \
     --core-db databases/core_nt \
@@ -157,37 +201,43 @@ python 9c-EnrichHomologsWithCoreNT.py \
     --max-hits-plant 150 \
     --max-hits-fungi 150 \
     --max-hits-per-species 5 \
-    --threads [YOUR_NUMER_OF_THREADS]
+    --threads [YOUR_NUMBER_OF_THREADS]
 ```
 
-### Step 6: Phylogeny & Automated Topology Analysis for Decision Helping
-Builds Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE) and automatically classifies candidates based on topological nesting (Monophyly vs. Paraphyly)
-```bash
+### Phase 6 - Phylogeny & Topology Analysis
+Maximum Likelihood trees (MAFFT + TrimAl + IQ-TREE), with topology-based classification of candidates (monophyly vs. paraphyly).
 
-#6a. This makes the trees human-readable by swapping messy assembly IDs with clean species names or gene annotations in the fasta files headers beforehand.
+**Helper - Rename FASTA/tree IDs** (swap messy assembly IDs for clean species names / gene annotations, for human-readable trees)
+```bash
 python rename_trees_fasta_ids.py \
     -i Result_HT/homologs_cleaned_final_core_nt/ \
     -m plant.fungi.correspondance.tsv \
     -o Result_HT/homologs_cleaned_final_core_nt_renamed \
     --pattern "*.fasta" \
     --mode fasta
+```
 
-# 6b. Build phylogenetic trees
+**Script 10 - Build phylogenetic trees**
+```bash
 python 10-BuildPhylogenies.py \
     --homologs-dir Result_HT/homologs_cleaned_final_core_nt_renamed \
     --outdir Result_HT/phylogenies_core_nt \
-    --mafft-threads [YOUR_NUMER_OF_THREADS] \
-    --iqtree-threads [YOUR_NUMER_OF_THREADS] \
+    --mafft-threads [YOUR_NUMBER_OF_THREADS] \
+    --iqtree-threads [YOUR_NUMBER_OF_THREADS] \
     --bb 1000 \
     --model MFP \
     --min-seqs 4
+```
 
-# 6c. Analyze Topologies
+**Script 11 - Analyze topologies**
+```bash
 python 11-AnalyzeTopology.py \
     --phylo-dir Result_HT/phylogenies_core_nt \
     --out Result_HT/final_candidates_summary.tsv
+```
 
-#6d. Visualization: This script automates the taxonomic annotation of your tree leaves so you can easily analyze the ecological/taxonomic distribution of your hits in R or Python.
+**Helper - Annotate tree leaves with taxonomy** (for ecological/taxonomic analysis in R or Python)
+```bash
 python trees_to_taxonomy_from_taxdump.py \
     -i Result_HT/phylogenies_core_nt \
     -d databases/ncbi_taxdump/ \
@@ -198,7 +248,15 @@ python trees_to_taxonomy_from_taxdump.py \
 
 ## 📂 Output Description
 
-The final output Result_HT/final_candidates_summary.tsv contains the classification of each candidate:
+`eggnog_annotation/te_labels.tsv` (Script 7) - per-candidate TE label:
+
+    candidate_id: Candidate sequence ID.
+
+    classification: TE, non_TE, or unannotated (no EggNOG hit). No candidate is removed.
+
+    matched_signature / description / preferred_name / pfams: Evidence behind the label.
+
+`Result_HT/final_candidates_summary.tsv` (Script 11) - classification of each candidate:
 
     candidate_id: Unique ID of the transfer event.
 
@@ -207,6 +265,7 @@ The final output Result_HT/final_candidates_summary.tsv contains the classificat
     closest_plant_species: The plant species most closely related to the fungal candidate.
 
     closest_pair_distance: Patristic distance between the candidate and its closest relative.
+
 ---
 
 ## 📚 Citation
